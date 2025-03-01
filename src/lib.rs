@@ -1,3 +1,7 @@
+//! Zebra Factory Content Hash Addressable Object Store 🦓
+//!
+//! This is a place holder crate till development starts for realsies.
+
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }

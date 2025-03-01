@@ -1,6 +1,15 @@
 [package]
-name = "zebrachaos"
-version = "0.1.0"
+name = "zf-zebrachaos"
+version = "0.0.0-pre.0"
 edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Jason Gerard DeRose <jasonderose@gmail.com>"]
+readme = "README.md"
+documentation = "https://docs.rs/zf-zebrachain"
+repository = "https://github.com/zebrafactory/zebrachaos"
+description = """
+Place holder for the Zebra Factory Content Hash Addressable Object Store.
+"""
 
 [dependencies]
