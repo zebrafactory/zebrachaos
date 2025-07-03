@@ -16,6 +16,9 @@ pub const HEXDIGEST: usize = DIGEST * 2;
 /// Size of Zbase32-encoded hash (64 bytes).
 pub const Z32DIGEST: usize = DIGEST * 8 / 5;
 
+/// Max size of an Object (2^24 + 1, 16777216 bytes)
+pub const OBJECT_MAX_SIZE: usize = 16777216;
+
 /// Error when trying to decode a Zbase32 encoded [Hash](crate::Hash).
 #[derive(Debug, PartialEq, Eq)]
 pub enum Zbase32Error {
@@ -224,6 +227,48 @@ impl core::fmt::Debug for Hash {
 impl core::fmt::Display for Hash {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.write_str(&self.to_z32_string())
+    }
+}
+
+/// Packs 24-bit `size` and 8-bit `kind` into a `u32`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Info {
+    val: u32,
+}
+
+impl Info {
+    pub fn new(size: usize, kind: u8) -> Self {
+        if !(1..=OBJECT_MAX_SIZE).contains(&size) {
+            panic!(
+                "Info: Need 1 <= size <= {}; got size={}",
+                OBJECT_MAX_SIZE, size
+            );
+        }
+        Self {
+            val: (size - 1) as u32 | (kind as u32) << 24,
+        }
+    }
+
+    pub fn from_le_bytes(buf: &[u8]) -> Self {
+        Self {
+            val: u32::from_le_bytes(buf.try_into().expect("oops")),
+        }
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 4] {
+        self.val.to_le_bytes()
+    }
+
+    pub fn raw(&self) -> u32 {
+        self.val
+    }
+
+    pub fn size(&self) -> usize {
+        ((self.val & 0x00ffffff) + 1) as usize
+    }
+
+    pub fn kind(&self) -> u8 {
+        (self.val >> 24) as u8
     }
 }
 
