@@ -343,6 +343,7 @@ mod tests {
     #[test]
     fn test_object() {
         assert_eq!(Object::new(&[]), Err(ObjectError::BufferLen));
+        assert_eq!(Object::new(&[0; HEADER]), Err(ObjectError::BufferLen));
         assert_eq!(Object::new(&[0; HEADER + 1]), Err(ObjectError::Content));
 
         let mut buf = [0; HEADER + 1];
@@ -353,6 +354,18 @@ mod tests {
         assert_eq!(obj.size(), 1);
         assert_eq!(obj.kind(), 0);
         assert_eq!(obj.data(), &[0; 1]);
+
+        let mut buf = [0; HEADER + 2];
+        let hash = Hash::compute(&[0; 2]);
+        buf[0..DIGEST].copy_from_slice(hash.as_bytes());
+        buf[DIGEST] = 1;
+        let obj = Object::new(&buf).unwrap();
+        assert_eq!(obj.hash(), &hash);
+        assert_eq!(obj.size(), 2);
+        assert_eq!(obj.kind(), 0);
+        assert_eq!(obj.data(), &[0; 2]);
+
+        assert_eq!(Object::new(&buf[0..HEADER + 1]), Err(ObjectError::Size));
     }
 
     #[test]
