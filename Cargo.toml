@@ -13,3 +13,6 @@ Place holder for the Zebra Factory Content Hash Addressable Object Store.
 """
 
 [dependencies]
+arrayvec = "0.7.6"
+blake2 = "0.10.6"
+subtle = "2.6.1"
