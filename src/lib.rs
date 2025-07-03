@@ -20,7 +20,7 @@ pub const HEXDIGEST: usize = DIGEST * 2;
 /// Size of Zbase32-encoded hash (64 bytes).
 pub const Z32DIGEST: usize = DIGEST * 8 / 5;
 
-/// Max size of an Object (2^24 + 1, 16777216 bytes)
+/// Max size of an Object (2^24, 16777216 bytes)
 pub const OBJECT_MAX_SIZE: usize = 16777216;
 
 /// Error when trying to decode a Zbase32 encoded [Hash](crate::Hash).
@@ -273,6 +273,13 @@ impl Info {
     }
 }
 
+fn extract_info(buf: &[u8]) -> (usize, u8) {
+    let info = u32::from_le_bytes(buf.try_into().unwrap());
+    let size = ((info & 0x00ffffff) + 1) as usize;
+    let kind = (info >> 24) as u8;
+    (size, kind)
+}
+
 pub enum ObjectError {
     Content,
     Size,
@@ -289,17 +296,17 @@ pub struct Object<'a> {
 impl<'a> Object<'a> {
     pub fn new(buf: &'a [u8]) -> Result<Self, ObjectError> {
         let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
-        let info = Info::from_le_bytes(&buf[DIGEST..HEADER]);
-        let computed = Hash::compute(&buf[DIGEST..DIGEST + INFO + info.size()]);
+        let (size, kind) = extract_info(&buf[DIGEST..HEADER]);
+        let computed = Hash::compute(&buf[DIGEST..DIGEST + INFO + size]);
         if hash != computed {
             Err(ObjectError::Content)
         } else {
             Ok(Self {
                 buf,
                 hash,
-                size: info.size(),
-                kind: info.kind(),
-                data: &buf[HEADER..HEADER + info.size()],
+                size,
+                kind,
+                data: &buf[HEADER..HEADER + size],
             })
         }
     }
@@ -310,5 +317,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {}
+    fn test_extract_info() {
+        assert_eq!(extract_info(&[0, 0, 0, 0]), (1, 0));
+        assert_eq!(extract_info(&[0, 0, 0, 255]), (1, 255));
+        assert_eq!(extract_info(&[255, 255, 255, 0]), (OBJECT_MAX_SIZE, 0));
+        assert_eq!(extract_info(&[255, 255, 255, 255]), (OBJECT_MAX_SIZE, 255));
+    }
 }
