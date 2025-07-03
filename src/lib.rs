@@ -280,41 +280,80 @@ fn extract_info(buf: &[u8]) -> (usize, u8) {
     (size, kind)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ObjectError {
-    Content,
+    BufferLen,
     Size,
+    Content,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct Object<'a> {
-    pub buf: &'a [u8],
-    pub hash: Hash,
-    pub size: usize,
-    pub kind: u8,
-    pub data: &'a [u8],
+    hash: Hash,
+    size: usize,
+    kind: u8,
+    data: &'a [u8],
 }
 
 impl<'a> Object<'a> {
     pub fn new(buf: &'a [u8]) -> Result<Self, ObjectError> {
-        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
+        if buf.len() < HEADER + 1 {
+            return Err(ObjectError::BufferLen);
+        }
         let (size, kind) = extract_info(&buf[DIGEST..HEADER]);
-        let computed = Hash::compute(&buf[DIGEST..DIGEST + INFO + size]);
+        if buf.len() < HEADER + size {
+            return Err(ObjectError::Size);
+        }
+        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
+        let data = &buf[HEADER..HEADER + size];
+        let computed = Hash::compute(data);
         if hash != computed {
             Err(ObjectError::Content)
         } else {
             Ok(Self {
-                buf,
                 hash,
                 size,
                 kind,
-                data: &buf[HEADER..HEADER + size],
+                data,
             })
         }
+    }
+
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn kind(&self) -> u8 {
+        self.kind
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.data
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_object() {
+        assert_eq!(Object::new(&[]), Err(ObjectError::BufferLen));
+        assert_eq!(Object::new(&[0; HEADER + 1]), Err(ObjectError::Content));
+
+        let mut buf = [0; HEADER + 1];
+        let hash = Hash::compute(&[0]);
+        buf[0..DIGEST].copy_from_slice(hash.as_bytes());
+        let obj = Object::new(&buf).unwrap();
+        assert_eq!(obj.hash(), &hash);
+        assert_eq!(obj.size(), 1);
+        assert_eq!(obj.kind(), 0);
+        assert_eq!(obj.data(), &[0; 1]);
+    }
 
     #[test]
     fn test_extract_info() {
