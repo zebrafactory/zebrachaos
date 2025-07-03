@@ -10,6 +10,10 @@ type Blake2b320 = Blake2b<U40>;
 /// Size of hash output digest (40 bytes).
 pub const DIGEST: usize = 40;
 
+pub const INFO: usize = 4;
+
+pub const HEADER: usize = DIGEST + INFO;
+
 /// Size of hex-encoded hash (80 bytes).
 pub const HEXDIGEST: usize = DIGEST * 2;
 
@@ -239,10 +243,7 @@ pub struct Info {
 impl Info {
     pub fn new(size: usize, kind: u8) -> Self {
         if !(1..=OBJECT_MAX_SIZE).contains(&size) {
-            panic!(
-                "Info: Need 1 <= size <= {}; got size={}",
-                OBJECT_MAX_SIZE, size
-            );
+            panic!("Info: Need 1 <= size <= {OBJECT_MAX_SIZE}; got size={size}");
         }
         Self {
             val: (size - 1) as u32 | (kind as u32) << 24,
@@ -269,6 +270,38 @@ impl Info {
 
     pub fn kind(&self) -> u8 {
         (self.val >> 24) as u8
+    }
+}
+
+pub enum ObjectError {
+    Content,
+    Size,
+}
+
+pub struct Object<'a> {
+    pub buf: &'a [u8],
+    pub hash: Hash,
+    pub size: usize,
+    pub kind: u8,
+    pub data: &'a [u8],
+}
+
+impl<'a> Object<'a> {
+    pub fn new(buf: &'a [u8]) -> Result<Self, ObjectError> {
+        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
+        let info = Info::from_le_bytes(&buf[DIGEST..HEADER]);
+        let computed = Hash::compute(&buf[DIGEST..DIGEST + INFO + info.size()]);
+        if hash != computed {
+            Err(ObjectError::Content)
+        } else {
+            Ok(Self {
+                buf,
+                hash,
+                size: info.size(),
+                kind: info.kind(),
+                data: &buf[HEADER..HEADER + info.size()],
+            })
+        }
     }
 }
 
