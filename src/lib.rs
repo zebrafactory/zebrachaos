@@ -282,7 +282,7 @@ fn extract_info(buf: &[u8]) -> (usize, u8) {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ObjectError {
-    BufferLen,
+    Header,
     Size,
     Content,
 }
@@ -290,15 +290,14 @@ pub enum ObjectError {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Object<'a> {
     hash: Hash,
-    size: usize,
     kind: u8,
     data: &'a [u8],
 }
 
 impl<'a> Object<'a> {
     pub fn new(buf: &'a [u8]) -> Result<Self, ObjectError> {
-        if buf.len() < HEADER + 1 {
-            return Err(ObjectError::BufferLen);
+        if buf.len() < HEADER {
+            return Err(ObjectError::Header);
         }
         let (size, kind) = extract_info(&buf[DIGEST..HEADER]);
         if buf.len() < HEADER + size {
@@ -306,16 +305,12 @@ impl<'a> Object<'a> {
         }
         let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
         let data = &buf[HEADER..HEADER + size];
+        assert_eq!(data.len(), size);
         let computed = Hash::compute(data);
         if hash != computed {
             Err(ObjectError::Content)
         } else {
-            Ok(Self {
-                hash,
-                size,
-                kind,
-                data,
-            })
+            Ok(Self { hash, kind, data })
         }
     }
 
@@ -324,7 +319,7 @@ impl<'a> Object<'a> {
     }
 
     pub fn size(&self) -> usize {
-        self.size
+        self.data.len()
     }
 
     pub fn kind(&self) -> u8 {
@@ -342,8 +337,8 @@ mod tests {
 
     #[test]
     fn test_object() {
-        assert_eq!(Object::new(&[]), Err(ObjectError::BufferLen));
-        assert_eq!(Object::new(&[0; HEADER]), Err(ObjectError::BufferLen));
+        assert_eq!(Object::new(&[]), Err(ObjectError::Header));
+        assert_eq!(Object::new(&[0; HEADER]), Err(ObjectError::Size));
         assert_eq!(Object::new(&[0; HEADER + 1]), Err(ObjectError::Content));
 
         let mut buf = [0; HEADER + 1];
