@@ -287,7 +287,7 @@ pub enum ObjectError {
     Content,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq)]
 pub struct Object<'a> {
     hash: Hash,
     kind: u8,
@@ -328,6 +328,12 @@ impl<'a> Object<'a> {
 
     pub fn data(&self) -> &[u8] {
         self.data
+    }
+}
+
+impl<'a> PartialEq for Object<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
     }
 }
 
