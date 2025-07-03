@@ -234,43 +234,11 @@ impl core::fmt::Display for Hash {
     }
 }
 
-/// Packs 24-bit `size` and 8-bit `kind` into a `u32`.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Info {
-    val: u32,
-}
-
-impl Info {
-    pub fn new(size: usize, kind: u8) -> Self {
-        if !(1..=OBJECT_MAX_SIZE).contains(&size) {
-            panic!("Info: Need 1 <= size <= {OBJECT_MAX_SIZE}; got size={size}");
-        }
-        Self {
-            val: (size - 1) as u32 | (kind as u32) << 24,
-        }
+fn build_info(size: usize, kind: u8) -> u32 {
+    if !(1..=OBJECT_MAX_SIZE).contains(&size) {
+        panic!("Info: Need 1 <= size <= {OBJECT_MAX_SIZE}; got size={size}");
     }
-
-    pub fn from_le_bytes(buf: &[u8]) -> Self {
-        Self {
-            val: u32::from_le_bytes(buf.try_into().expect("oops")),
-        }
-    }
-
-    pub fn to_le_bytes(&self) -> [u8; 4] {
-        self.val.to_le_bytes()
-    }
-
-    pub fn raw(&self) -> u32 {
-        self.val
-    }
-
-    pub fn size(&self) -> usize {
-        ((self.val & 0x00ffffff) + 1) as usize
-    }
-
-    pub fn kind(&self) -> u8 {
-        (self.val >> 24) as u8
-    }
+    (size - 1) as u32 | (kind as u32) << 24
 }
 
 fn extract_info(buf: &[u8]) -> (usize, u8) {
@@ -342,6 +310,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_build_info() {
+        assert_eq!(build_info(1, 0), 0);
+        assert_eq!(build_info(1, 255), 255 << 24);
+        assert_eq!(build_info(OBJECT_MAX_SIZE, 0), (OBJECT_MAX_SIZE - 1) as u32);
+        assert_eq!(build_info(OBJECT_MAX_SIZE, 255), u32::MAX);
+    }
+
+    #[test]
+    fn test_extract_info() {
+        assert_eq!(extract_info(&[0, 0, 0, 0]), (1, 0));
+        assert_eq!(extract_info(&[0, 0, 0, 255]), (1, 255));
+        assert_eq!(extract_info(&[1, 0, 0, 0]), (2, 0));
+        assert_eq!(extract_info(&[1, 0, 0, 255]), (2, 255));
+        assert_eq!(extract_info(&[255, 255, 255, 0]), (OBJECT_MAX_SIZE, 0));
+        assert_eq!(extract_info(&[255, 255, 255, 255]), (OBJECT_MAX_SIZE, 255));
+    }
+
+    #[test]
     fn test_object() {
         assert_eq!(Object::new(&[]), Err(ObjectError::Header));
         assert_eq!(Object::new(&[0; HEADER]), Err(ObjectError::Size));
@@ -367,13 +353,5 @@ mod tests {
         assert_eq!(obj.data(), &[0; 2]);
 
         assert_eq!(Object::new(&buf[0..HEADER + 1]), Err(ObjectError::Size));
-    }
-
-    #[test]
-    fn test_extract_info() {
-        assert_eq!(extract_info(&[0, 0, 0, 0]), (1, 0));
-        assert_eq!(extract_info(&[0, 0, 0, 255]), (1, 255));
-        assert_eq!(extract_info(&[255, 255, 255, 0]), (OBJECT_MAX_SIZE, 0));
-        assert_eq!(extract_info(&[255, 255, 255, 255]), (OBJECT_MAX_SIZE, 255));
     }
 }
