@@ -2,13 +2,14 @@
 //!
 //! This is a place holder crate till development starts for realsies.
 
-use blake2::{Blake2b, Digest, digest::consts::U40};
+use blake2::{Blake2b, Digest, digest::consts::U45};
+use core::ops::Range;
 use subtle::{Choice, ConstantTimeEq};
 
-type Blake2b320 = Blake2b<U40>;
+type Blake2b360 = Blake2b<U45>;
 
 /// Size of hash output digest (40 bytes).
-pub const DIGEST: usize = 40;
+pub const DIGEST: usize = 45;
 
 pub const INFO: usize = 4;
 
@@ -104,7 +105,7 @@ pub enum HexError {
     BadByte(u8),
 }
 
-/// Buffer containing the 320-bit (40-byte) BLAKE2b hash, with ConstantTimeEq.
+/// Buffer containing the 360-bit (45-byte) BLAKE2b hash, with ConstantTimeEq.
 ///
 /// # Examples
 ///
@@ -118,10 +119,10 @@ pub struct Hash {
 }
 
 impl Hash {
-    /// Compute the 320-bit BLAKE2b hash of `input`, returning `Hash`.
+    /// Compute the 360-bit BLAKE2b hash of `input`, returning `Hash`.
     pub fn compute(input: &[u8]) -> Self {
         assert!(!input.is_empty());
-        let mut hasher = Blake2b320::new();
+        let mut hasher = Blake2b360::new();
         hasher.update(input);
         let output = hasher.finalize();
         Self::from_bytes(output.into())
@@ -234,11 +235,22 @@ impl core::fmt::Display for Hash {
     }
 }
 
-fn build_info(size: usize, kind: u8) -> u32 {
+fn build_info(size: usize, kind: u8) -> Result<u32, ObjectError> {
     if !(1..=OBJECT_MAX_SIZE).contains(&size) {
-        panic!("Info: Need 1 <= size <= {OBJECT_MAX_SIZE}; got size={size}");
+        Err(ObjectError::Size)
+    } else {
+        Ok((size - 1) as u32 | (kind as u32) << 24)
     }
-    (size - 1) as u32 | (kind as u32) << 24
+}
+
+fn build_header(data: &[u8], kind: u8) -> Result<(Hash, u32), ObjectError> {
+    let info = build_info(data.len(), kind)?;
+    let mut hasher = Blake2b360::new();
+    hasher.update(&info.to_le_bytes());
+    hasher.update(data);
+    let output = hasher.finalize();
+    let hash = Hash::from_bytes(output.into());
+    Ok((hash, info))
 }
 
 fn extract_info(buf: &[u8]) -> (usize, u8) {
@@ -311,10 +323,18 @@ mod tests {
 
     #[test]
     fn test_build_info() {
-        assert_eq!(build_info(1, 0), 0);
-        assert_eq!(build_info(1, 255), 255 << 24);
-        assert_eq!(build_info(OBJECT_MAX_SIZE, 0), (OBJECT_MAX_SIZE - 1) as u32);
-        assert_eq!(build_info(OBJECT_MAX_SIZE, 255), u32::MAX);
+        assert_eq!(build_info(0, 0), Err(ObjectError::Size));
+        assert_eq!(build_info(0, 255), Err(ObjectError::Size));
+        assert_eq!(build_info(OBJECT_MAX_SIZE + 1, 0), Err(ObjectError::Size));
+        assert_eq!(build_info(OBJECT_MAX_SIZE + 1, 255), Err(ObjectError::Size));
+
+        assert_eq!(build_info(1, 0), Ok(0));
+        assert_eq!(build_info(1, 255), Ok(255 << 24));
+        assert_eq!(
+            build_info(OBJECT_MAX_SIZE, 0),
+            Ok((OBJECT_MAX_SIZE - 1) as u32)
+        );
+        assert_eq!(build_info(OBJECT_MAX_SIZE, 255), Ok(u32::MAX));
     }
 
     #[test]
