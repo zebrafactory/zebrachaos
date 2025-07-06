@@ -4,21 +4,33 @@
 
 use blake2::{Blake2b, Digest, digest::consts::U45};
 use core::ops::Range;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek};
 use subtle::{Choice, ConstantTimeEq};
+
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::FileExt;
+
+#[cfg(not(target_os = "windows"))]
+use std::os::unix::fs::FileExt;
 
 type Blake2b360 = Blake2b<U45>;
 
-/// Size of hash output digest (40 bytes).
+/// Size of hash output digest (45 bytes).
 pub const DIGEST: usize = 45;
 
 pub const INFO: usize = 4;
 
 pub const HEADER: usize = DIGEST + INFO;
 
-/// Size of hex-encoded hash (80 bytes).
+pub const HASH_RANGE: Range<usize> = 0..DIGEST;
+pub const INFO_RANGE: Range<usize> = DIGEST..DIGEST + INFO;
+
+/// Size of hex-encoded hash (90 bytes).
 pub const HEXDIGEST: usize = DIGEST * 2;
 
-/// Size of Zbase32-encoded hash (64 bytes).
+/// Size of Zbase32-encoded hash (72 bytes).
 pub const Z32DIGEST: usize = DIGEST * 8 / 5;
 
 /// Max size of an Object (2^24, 16777216 bytes)
@@ -260,6 +272,16 @@ fn extract_info(buf: &[u8]) -> (usize, u8) {
     (size, kind)
 }
 
+fn extract_header(buf: &[u8]) -> Result<(Hash, usize, u8), ObjectError> {
+    if buf.len() < HEADER {
+        Err(ObjectError::Header)
+    } else {
+        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
+        let (size, kind) = extract_info(&buf[INFO_RANGE]);
+        Ok((hash, size, kind))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ObjectError {
     Header,
@@ -276,14 +298,10 @@ pub struct Object<'a> {
 
 impl<'a> Object<'a> {
     pub fn new(buf: &'a [u8]) -> Result<Self, ObjectError> {
-        if buf.len() < HEADER {
-            return Err(ObjectError::Header);
-        }
-        let (size, kind) = extract_info(&buf[DIGEST..HEADER]);
+        let (hash, size, kind) = extract_header(buf)?;
         if buf.len() < HEADER + size {
             return Err(ObjectError::Size);
         }
-        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
         let data = &buf[HEADER..HEADER + size];
         assert_eq!(data.len(), size);
         let computed = Hash::compute(data);
@@ -292,6 +310,11 @@ impl<'a> Object<'a> {
         } else {
             Ok(Self { hash, kind, data })
         }
+    }
+
+    pub fn build(data: &'a [u8], kind: u8) -> Result<Self, ObjectError> {
+        let (hash, info) = build_header(data, kind)?;
+        Ok(Self { hash, kind, data })
     }
 
     pub fn hash(&self) -> &Hash {
@@ -314,6 +337,93 @@ impl<'a> Object<'a> {
 impl<'a> PartialEq for Object<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash
+    }
+}
+
+pub struct ObjectBuf {
+    buf: Vec<u8>,
+}
+
+impl ObjectBuf {
+    pub fn new() -> Self {
+        Self {
+            buf: Vec::with_capacity(HEADER + 4096),
+        }
+    }
+
+    pub fn as_mut_header(&mut self) -> &mut [u8] {
+        &mut self.buf[0..HEADER]
+    }
+
+    pub fn as_mut_data(&mut self) -> &mut [u8] {
+        let (size, _) = extract_info(&self.buf[INFO_RANGE]);
+        self.buf.resize(HEADER + size, 0);
+        &mut self.buf[HEADER..]
+    }
+
+    pub fn as_mut_buf(&mut self, size: usize) -> &mut [u8] {
+        self.buf.resize(HEADER + size, 0);
+        &mut self.buf
+    }
+
+    pub fn object(&self) -> Result<Object<'_>, ObjectError> {
+        Object::new(&self.buf)
+    }
+}
+
+fn read_retry(file: &mut BufReader<File>, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut read = 0;
+    loop {
+        let new = file.read(&mut buf[read..])?;
+        read += new;
+        if read == buf.len() || new == 0 {
+            return Ok(read);
+        }
+    }
+}
+
+pub struct Entry {
+    size: usize,
+    offset: u64,
+}
+
+impl Entry {
+    pub fn new(size: usize, offset: u64) -> Self {
+        Self { size, offset }
+    }
+}
+
+pub struct Store {
+    file: std::fs::File,
+    index: HashMap<Hash, Entry>,
+    offset: u64,
+}
+
+impl Store {
+    pub fn reindex(&mut self, object_buf: &mut ObjectBuf) -> std::io::Result<()> {
+        self.index.clear();
+        self.offset = 0;
+        self.file.rewind()?;
+        let mut file = BufReader::with_capacity(1024 * 128, self.file.try_clone()?);
+        loop {
+            if read_retry(&mut file, object_buf.as_mut_header())? < HEADER {
+                return Ok(());
+            }
+            file.read_exact(object_buf.as_mut_data())?;
+            let object = object_buf.object().unwrap();
+            let entry = Entry::new(object.size(), self.offset);
+            self.index.insert(*object.hash(), entry);
+            self.offset += (HEADER + object.size()) as u64;
+        }
+        Ok(())
+    }
+
+    pub fn load(&mut self, object_buf: &mut ObjectBuf, hash: &Hash) -> std::io::Result<bool> {
+        if let Some(entry) = self.index.get(hash) {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
