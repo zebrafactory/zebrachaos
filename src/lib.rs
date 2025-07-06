@@ -6,7 +6,7 @@ use blake2::{Blake2b, Digest, digest::consts::U45};
 use core::ops::Range;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek};
+use std::io::{BufReader, Read, Seek, Write};
 use subtle::{Choice, ConstantTimeEq};
 
 #[cfg(target_os = "windows")]
@@ -303,18 +303,12 @@ impl<'a> Object<'a> {
             return Err(ObjectError::Size);
         }
         let data = &buf[HEADER..HEADER + size];
-        assert_eq!(data.len(), size);
         let computed = Hash::compute(data);
         if hash != computed {
             Err(ObjectError::Content)
         } else {
             Ok(Self { hash, kind, data })
         }
-    }
-
-    pub fn build(data: &'a [u8], kind: u8) -> Result<Self, ObjectError> {
-        let (hash, info) = build_header(data, kind)?;
-        Ok(Self { hash, kind, data })
     }
 
     pub fn hash(&self) -> &Hash {
@@ -349,6 +343,11 @@ impl ObjectBuf {
         Self {
             buf: Vec::with_capacity(HEADER + 4096),
         }
+    }
+
+    pub fn as_buf(&self) -> &[u8] {
+        let (size, _) = extract_info(&self.buf[INFO_RANGE]);
+        &self.buf[0..HEADER + size]
     }
 
     pub fn as_mut_header(&mut self) -> &mut [u8] {
@@ -400,13 +399,22 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn new(file: File) -> Self {
+        Self {
+            file,
+            index: HashMap::new(),
+            offset: 0,
+        }
+    }
+
     pub fn reindex(&mut self, object_buf: &mut ObjectBuf) -> std::io::Result<()> {
         self.index.clear();
         self.offset = 0;
-        self.file.rewind()?;
         let mut file = BufReader::with_capacity(1024 * 128, self.file.try_clone()?);
+        file.rewind()?;
         loop {
-            if read_retry(&mut file, object_buf.as_mut_header())? < HEADER {
+            let read = read_retry(&mut file, object_buf.as_mut_header())?;
+            if read < HEADER {
                 return Ok(());
             }
             file.read_exact(object_buf.as_mut_data())?;
@@ -418,8 +426,23 @@ impl Store {
         Ok(())
     }
 
+    pub fn save(&mut self, object_buf: &ObjectBuf) -> std::io::Result<bool> {
+        let obj = object_buf.object().unwrap();
+        if let Some(entry) = self.index.get(obj.hash()) {
+            Ok(false)
+        } else {
+            self.file.write_all(object_buf.as_buf())?;
+            let entry = Entry::new(obj.size(), self.offset);
+            self.index.insert(*obj.hash(), entry);
+            self.offset += (HEADER + obj.size()) as u64;
+            Ok(true)
+        }
+    }
+
     pub fn load(&mut self, object_buf: &mut ObjectBuf, hash: &Hash) -> std::io::Result<bool> {
         if let Some(entry) = self.index.get(hash) {
+            self.file
+                .read_exact_at(object_buf.as_mut_buf(entry.size), entry.offset)?;
             Ok(true)
         } else {
             Ok(false)
