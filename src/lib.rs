@@ -456,7 +456,7 @@ impl Store {
             let mut buf = object_buf.as_mut_buf(entry.size);
             // Totally copy pasta from os::unix::fs::FsExt::read_exact_at()
             while !buf.is_empty() {
-                match file.seek_read(buf, offset) {
+                match self.file.seek_read(buf, entry.offset) {
                     Ok(0) => break,
                     Ok(n) => {
                         let tmp = buf;
