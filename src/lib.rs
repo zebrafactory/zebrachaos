@@ -463,7 +463,6 @@ impl Store {
                         buf = &mut tmp[n..];
                         offset += n as u64;
                     }
-                    Err(ref e) if e.is_interrupted() => {}
                     Err(e) => return Err(e),
                 }
             }
