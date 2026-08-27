@@ -439,11 +439,39 @@ impl Store {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     pub fn load(&mut self, object_buf: &mut ObjectBuf, hash: &Hash) -> std::io::Result<bool> {
         if let Some(entry) = self.index.get(hash) {
             self.file
                 .read_exact_at(object_buf.as_mut_buf(entry.size), entry.offset)?;
             Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn load(&mut self, object_buf: &mut ObjectBuf, hash: &Hash) -> std::io::Result<bool> {
+        if let Some(entry) = self.index.get(hash) {
+            let mut buf = object_buf.as_mut_buf(entry.size);
+            // Totally copy pasta from os::unix::fs::FsExt::read_exact_at()
+            while !buf.is_empty() {
+                match self.seek_read(buf, offset) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let tmp = buf;
+                        buf = &mut tmp[n..];
+                        offset += n as u64;
+                    }
+                    Err(ref e) if e.is_interrupted() => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            if !buf.is_empty() {
+                Err(io::Error::READ_EXACT_EOF)
+            } else {
+                Ok((true))
+            }
         } else {
             Ok(false)
         }
