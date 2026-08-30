@@ -454,22 +454,19 @@ impl Store {
     pub fn load(&mut self, object_buf: &mut ObjectBuf, hash: &Hash) -> std::io::Result<bool> {
         if let Some(entry) = self.index.get(hash) {
             let mut buf = object_buf.as_mut_buf(entry.size);
-            // Totally copy pasta from os::unix::fs::FsExt::read_exact_at()
-            while !buf.is_empty() {
-                match self.file.seek_read(buf, entry.offset) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let tmp = buf;
-                        buf = &mut tmp[n..];
-                        offset += n as u64;
-                    }
-                    Err(e) => return Err(e),
+            let mut read = 0;
+            while read < buf.len() {
+                let new = self.file.seek_read(&mut buf[read..], entry.offset)?;
+                read += new;
+                if new == 0 {
+                    break;
                 }
             }
-            if !buf.is_empty() {
-                Err(io::Error::READ_EXACT_EOF)
+            if read != buf.len() {
+                // FIXME: Do more better
+                Err(std::io::Error::other("oops"))
             } else {
-                Ok((true))
+                Ok(true)
             }
         } else {
             Ok(false)
