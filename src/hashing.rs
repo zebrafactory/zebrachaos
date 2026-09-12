@@ -124,6 +124,14 @@ impl Hash {
         Self::from_bytes(output.into())
     }
 
+    pub fn compute_with_info(info: u32, input: &[u8]) -> Self {
+        let mut hasher = Blake2b360::new();
+        hasher.update(&info.to_le_bytes());
+        hasher.update(input);
+        let output = hasher.finalize();
+        Self::from_bytes(output.into())
+    }
+
     /// Load from a slice
     pub fn from_slice(slice: &[u8]) -> Result<Self, core::array::TryFromSliceError> {
         Ok(Self::from_bytes(slice.try_into()?))
