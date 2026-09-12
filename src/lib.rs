@@ -2,6 +2,8 @@
 //!
 //! This is a place holder crate till development starts for realsies.
 
+mod hashing;
+
 use blake2::{Blake2b, Digest, digest::consts::U45};
 use core::ops::Range;
 use std::collections::HashMap;
