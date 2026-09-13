@@ -79,6 +79,7 @@ pub struct MutObject<'a> {
 mod tests {
     use super::*;
     use crate::hashing::random_hash;
+    use getrandom;
 
     #[test]
     fn test_objectheader_build() {
@@ -161,5 +162,41 @@ mod tests {
     }
 
     #[test]
-    fn test_objectheader_write_to_buf() {}
+    fn test_objectheader_write_to_buf() {
+        let hash = random_hash();
+        let info = 69;
+        let header = ObjectHeader::new(hash.clone(), info);
+        assert_eq!(header.size(), 70);
+        assert_eq!(header.kind(), 0);
+        assert_eq!(header.write_to_buf(&mut []), Err(ObjectError::Header));
+        assert_eq!(
+            header.write_to_buf(&mut [0; HEADER - 1]),
+            Err(ObjectError::Header)
+        );
+
+        let mut buf = [0; HEADER];
+        header.write_to_buf(&mut buf).unwrap();
+        assert_eq!(&buf[0..DIGEST], hash.as_bytes());
+        assert_eq!(&buf[INFO_RANGE], &[69, 0, 0, 0]);
+
+        let mut buf = [0; HEADER + 21];
+        header.write_to_buf(&mut buf).unwrap();
+        assert_eq!(&buf[0..DIGEST], hash.as_bytes());
+        assert_eq!(&buf[INFO_RANGE], &[69, 0, 0, 0]);
+        assert_eq!(&buf[HEADER..], &[0; 21]);
+    }
+
+    #[test]
+    fn test_objectheader_roundtrip() {
+        for _ in 0..420 {
+            let mut src = [0; HEADER];
+            getrandom::fill(&mut src).unwrap();
+            let src = src;
+            let header = ObjectHeader::read_from_buf(&src).unwrap();
+            let mut dst = [0; HEADER];
+            assert_ne!(src, dst);
+            header.write_to_buf(&mut dst).unwrap();
+            assert_eq!(src, dst);
+        }
+    }
 }

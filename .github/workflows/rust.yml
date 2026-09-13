@@ -31,6 +31,8 @@ jobs:
       - name: Clippy
         run: cargo clippy
       - name: Build
-        run: cargo build --verbose --release
+        run: cargo build --verbose
       - name: Test
+        run: cargo test --verbose
+      - name: Test In Relase Mode
         run: cargo test --verbose --release
