@@ -255,7 +255,7 @@ mod tests {
         let header = ObjectHeader::new(hash.clone(), info);
         assert_eq!(header.size(), 70);
         assert_eq!(header.kind(), 0);
-        assert_eq!(header.write_to_buf(&mut []), Err(ObjectError::Header));
+        assert_eq!(header.write_to_buf(&mut []), Err(ObjectError::HeaderLen));
         assert_eq!(
             header.write_to_buf(&mut [0; HEADER - 1]),
             Err(ObjectError::HeaderLen)

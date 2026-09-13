@@ -246,7 +246,6 @@ impl core::fmt::Display for Hash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn test_zbase32_enc_into() {
