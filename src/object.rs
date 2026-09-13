@@ -1,15 +1,17 @@
 use crate::Hash;
 use crate::always::*;
 
+/// Error returned when building and validating objects.
 #[derive(Debug, PartialEq)]
 pub enum ObjectError {
-    EmptyBuffer,
-    ShortBuffer,
-    BufferSize,
-    Header,
-    Hash,
-    Size,
+    /// Bytes need for header (49) not availabel in buffer.
+    HeaderLen,
+
+    /// Length of object data is out of bounds or does not match expected value.
     DataLen,
+
+    /// Hash computed over object info and data does not match expected hash.
+    Hash,
 }
 
 /// The CHOAS framing header (hash, size, kind).
@@ -36,10 +38,12 @@ pub struct ObjectHeader {
 }
 
 impl ObjectHeader {
+    /// New instance.
     pub fn new(hash: Hash, info: u32) -> Self {
         Self { hash, info }
     }
 
+    /// Compute hash and info corresponding to `kind` and `data`.
     pub fn build(kind: u8, data: &[u8]) -> Result<Self, ObjectError> {
         if !(1..=OBJECT_MAX_SIZE).contains(&data.len()) {
             Err(ObjectError::DataLen)
@@ -64,21 +68,25 @@ impl ObjectHeader {
         }
     }
 
+    /// Reference to the [crate::Hash] of the corresponding object.
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
 
+    /// Size of object data in bytes (extracted from info field).
     pub fn size(&self) -> usize {
         ((self.info & 0x00ffffff) + 1) as usize
     }
 
+    /// Object kind (extracted from info field).
     pub fn kind(&self) -> u8 {
         (self.info >> 24) as u8
     }
 
+    /// Read and extract 49 byte [ObjectHeader] from a buffer.
     pub fn read_from_buf(buf: &[u8]) -> Result<Self, ObjectError> {
         if buf.len() < HEADER {
-            Err(ObjectError::Header)
+            Err(ObjectError::HeaderLen)
         } else {
             let hash = Hash::from_slice(&buf[HASH_RANGE]).unwrap();
             let info = u32::from_le_bytes(buf[INFO_RANGE].try_into().unwrap());
@@ -86,9 +94,10 @@ impl ObjectHeader {
         }
     }
 
+    /// Write
     pub fn write_to_buf(&self, buf: &mut [u8]) -> Result<(), ObjectError> {
         if buf.len() < HEADER {
-            Err(ObjectError::Header)
+            Err(ObjectError::HeaderLen)
         } else {
             buf[HASH_RANGE].copy_from_slice(self.hash.as_bytes());
             buf[INFO_RANGE].copy_from_slice(&self.info.to_le_bytes());
@@ -98,8 +107,6 @@ impl ObjectHeader {
 }
 
 /// Object.
-///
-/// There is no public contructor, use [ObjectHeader::verify_object()].
 #[derive(Debug, PartialEq)]
 pub struct Object<'a> {
     header: ObjectHeader,
@@ -107,6 +114,12 @@ pub struct Object<'a> {
 }
 
 impl<'a> Object<'a> {
+    /// Build and object of `kind` with `data`.
+    pub fn build(kind: u8, data: &'a [u8]) -> Result<Object<'a>, ObjectError> {
+        let header = ObjectHeader::build(kind, data)?;
+        Ok(Self { header, data })
+    }
+
     /// Reference to [ObjectHeader].
     pub fn header(&self) -> &ObjectHeader {
         &self.header
@@ -199,14 +212,25 @@ mod tests {
         let object = header.clone().verify_object(b"Some stuff").unwrap();
         assert_eq!(object.header(), &header);
         assert_eq!(object.data(), b"Some stuff");
+
+        /// Header with wrong kind
+        let header2 = ObjectHeader::build(69, b"Some stuff").unwrap();
+        let header = ObjectHeader::new(header.hash().clone(), header2.info);
+        assert_eq!(
+            header.clone().verify_object(b"Some stuff"),
+            Err(ObjectError::Hash)
+        );
     }
 
     #[test]
     fn test_objectheader_read_from_buf() {
-        assert_eq!(ObjectHeader::read_from_buf(&[]), Err(ObjectError::Header));
+        assert_eq!(
+            ObjectHeader::read_from_buf(&[]),
+            Err(ObjectError::HeaderLen)
+        );
         assert_eq!(
             ObjectHeader::read_from_buf(&[42; HEADER - 1]),
-            Err(ObjectError::Header)
+            Err(ObjectError::HeaderLen)
         );
         let header = ObjectHeader::read_from_buf(&[42; HEADER]).unwrap();
         assert_eq!(header.hash(), &Hash::from_bytes([42; DIGEST]));
@@ -234,7 +258,7 @@ mod tests {
         assert_eq!(header.write_to_buf(&mut []), Err(ObjectError::Header));
         assert_eq!(
             header.write_to_buf(&mut [0; HEADER - 1]),
-            Err(ObjectError::Header)
+            Err(ObjectError::HeaderLen)
         );
 
         let mut buf = [0; HEADER];

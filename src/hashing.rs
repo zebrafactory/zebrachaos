@@ -1,6 +1,8 @@
-use blake2::{Blake2b, Blake2bMac, Digest, digest::consts::U45};
-use getrandom;
+use blake2::{Blake2b, Digest, digest::consts::U45};
 use subtle::{Choice, ConstantTimeEq};
+
+#[cfg(test)]
+use getrandom;
 
 type Blake2b360 = Blake2b<U45>;
 
@@ -85,6 +87,7 @@ fn zbase32_dec_into(src: &[u8], dst: &mut [u8]) -> Result<(), Zbase32Error> {
 }
 
 /// Returns a random [blake3::Hash] created with [getrandom::fill()].
+#[cfg(test)]
 pub fn random_hash() -> Hash {
     let mut buf = [0; DIGEST];
     getrandom::fill(&mut buf).unwrap();
@@ -124,6 +127,7 @@ impl Hash {
         Self::from_bytes(output.into())
     }
 
+    /// Compute ZebraChaos object hash using provided `info` and `data`.
     pub fn compute_with_info(info: u32, data: &[u8]) -> Self {
         let mut hasher = Blake2b360::new();
         hasher.update(&info.to_le_bytes());

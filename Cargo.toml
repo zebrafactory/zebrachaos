@@ -14,7 +14,6 @@ Place holder for the Zebra Factory Content Hash Addressable Object Store.
 [dependencies]
 arrayvec = "0.7.6"
 blake2 = "0.11.0"
-getrandom = "0.4.3"
 subtle = "2.6.1"
 
 # Enable a small amount of optimization in the dev profile.
@@ -24,3 +23,6 @@ opt-level = 1
 # Enable a large amount of optimization in the dev profile for dependencies.
 [profile.dev.package."*"]
 opt-level = 3
+
+[dev-dependencies]
+getrandom = "0.4.3"
