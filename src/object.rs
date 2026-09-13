@@ -12,7 +12,24 @@ pub enum ObjectError {
     DataLen,
 }
 
-#[derive(Debug, PartialEq)]
+/// The CHOAS framing header (hash, size, kind).
+///
+/// # Examples
+///
+/// ```
+/// use zf_zebrachaos::{HEADER, ObjectHeader};
+///
+/// let kind = 1;
+/// let data = b"The object's data";
+/// let header = ObjectHeader::build(kind, data).unwrap();
+/// assert_eq!(header.size(), 17);
+/// assert_eq!(header.kind(), 1);
+/// let mut buf = [0; HEADER];
+/// header.write_to_buf(&mut buf).unwrap();
+/// let header_again = ObjectHeader::read_from_buf(&buf).unwrap();
+/// assert_eq!(header, header_again);
+/// ```
+#[derive(Debug, PartialEq, Clone)]
 pub struct ObjectHeader {
     hash: Hash,
     info: u32,
@@ -33,6 +50,20 @@ impl ObjectHeader {
         }
     }
 
+    /// Valadite object data against this header.
+    ///
+    /// If you need access to this `ObjectHeader` instance  and `data` after this method succeeds,
+    /// use [Object::header()] and [Object::data()].
+    pub fn verify_object<'a>(self, data: &'a [u8]) -> Result<Object<'a>, ObjectError> {
+        if self.size() != data.len() {
+            Err(ObjectError::DataLen)
+        } else if self.hash != Hash::compute_with_info(self.info, data) {
+            Err(ObjectError::Hash)
+        } else {
+            Ok(Object { header: self, data })
+        }
+    }
+
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
@@ -50,8 +81,7 @@ impl ObjectHeader {
             Err(ObjectError::Header)
         } else {
             let hash = Hash::from_slice(&buf[HASH_RANGE]).unwrap();
-            let infobuf: [u8; 4] = buf[INFO_RANGE].try_into().unwrap();
-            let info = u32::from_le_bytes(infobuf);
+            let info = u32::from_le_bytes(buf[INFO_RANGE].try_into().unwrap());
             Ok(Self { hash, info })
         }
     }
@@ -67,12 +97,25 @@ impl ObjectHeader {
     }
 }
 
+/// Object.
+///
+/// There is no public contructor, use [ObjectHeader::verify_object()].
+#[derive(Debug, PartialEq)]
 pub struct Object<'a> {
-    buf: &'a [u8],
+    header: ObjectHeader,
+    data: &'a [u8],
 }
 
-pub struct MutObject<'a> {
-    buf: &'a mut [u8],
+impl<'a> Object<'a> {
+    /// Reference to [ObjectHeader].
+    pub fn header(&self) -> &ObjectHeader {
+        &self.header
+    }
+
+    /// Reference to the object data.
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
 }
 
 #[cfg(test)]
@@ -136,6 +179,26 @@ mod tests {
         );
         assert_eq!(header.size(), 1);
         assert_eq!(header.kind(), 255);
+    }
+
+    #[test]
+    fn test_objectheader_verify_object() {
+        let header = ObjectHeader::build(42, b"Some stuff").unwrap();
+        assert_eq!(
+            header.clone().verify_object(b"Some stuf"),
+            Err(ObjectError::DataLen)
+        );
+        assert_eq!(
+            header.clone().verify_object(b"Some stuffs"),
+            Err(ObjectError::DataLen)
+        );
+        assert_eq!(
+            header.clone().verify_object(b"Some stuft"),
+            Err(ObjectError::Hash)
+        );
+        let object = header.clone().verify_object(b"Some stuff").unwrap();
+        assert_eq!(object.header(), &header);
+        assert_eq!(object.data(), b"Some stuff");
     }
 
     #[test]
