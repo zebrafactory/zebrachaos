@@ -7,8 +7,11 @@ pub enum ObjectError {
     /// Bytes need for header (49) not availabel in buffer.
     HeaderLen,
 
-    /// Length of object data is out of bounds or does not match expected value.
+    /// Length of object data does not match expected value.
     DataLen,
+
+    /// Length of object data is zero or greater than `OBJECT_MAX_SIZE`.
+    DataLenBounds,
 
     /// Hash computed over object info and data does not match expected hash.
     Hash,
@@ -46,7 +49,7 @@ impl ObjectHeader {
     /// Compute hash and info corresponding to `kind` and `data`.
     pub fn build(kind: u8, data: &[u8]) -> Result<Self, ObjectError> {
         if !(1..=OBJECT_MAX_SIZE).contains(&data.len()) {
-            Err(ObjectError::DataLen)
+            Err(ObjectError::DataLenBounds)
         } else {
             let info = (data.len() - 1) as u32 | (kind as u32) << 24;
             let hash = Hash::compute_with_info(info, data);
@@ -139,10 +142,13 @@ mod tests {
 
     #[test]
     fn test_objectheader_build() {
-        assert_eq!(ObjectHeader::build(0, &[]), Err(ObjectError::DataLen));
+        assert_eq!(ObjectHeader::build(0, &[]), Err(ObjectError::DataLenBounds));
         let mut buf = Vec::with_capacity(OBJECT_MAX_SIZE + 1);
         buf.resize(OBJECT_MAX_SIZE + 1, 0);
-        assert_eq!(ObjectHeader::build(0, &buf), Err(ObjectError::DataLen));
+        assert_eq!(
+            ObjectHeader::build(0, &buf),
+            Err(ObjectError::DataLenBounds)
+        );
 
         // buf.len() == OBJECT_MAX_SIZE, kind == 0
         buf.resize(OBJECT_MAX_SIZE, 0);
