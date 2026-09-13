@@ -3,8 +3,10 @@ use core::ops::Range;
 /// Size of hash output digest (45 bytes).
 pub const DIGEST: usize = 45;
 
+/// Size of info portion of object header (4 bytes).
 pub const INFO: usize = 4;
 
+/// Size of object header (49 bytes).
 pub const HEADER: usize = DIGEST + INFO;
 
 pub const HASH_RANGE: Range<usize> = 0..DIGEST;

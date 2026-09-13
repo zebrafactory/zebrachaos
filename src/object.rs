@@ -9,14 +9,30 @@ pub enum ObjectError {
     Header,
     Hash,
     Size,
+    DataLen,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct ObjectHeader {
     hash: Hash,
     info: u32,
 }
 
 impl ObjectHeader {
+    pub fn new(hash: Hash, info: u32) -> Self {
+        Self { hash, info }
+    }
+
+    pub fn build(kind: u8, data: &[u8]) -> Result<Self, ObjectError> {
+        if !(1..=OBJECT_MAX_SIZE).contains(&data.len()) {
+            Err(ObjectError::DataLen)
+        } else {
+            let info = (data.len() - 1) as u32 | (kind as u32) << 24;
+            let hash = Hash::compute_with_info(info, data);
+            Ok(Self { hash, info })
+        }
+    }
+
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
@@ -28,40 +44,28 @@ impl ObjectHeader {
     pub fn kind(&self) -> u8 {
         (self.info >> 24) as u8
     }
-}
 
-fn build_info(size: usize, kind: u8) -> Result<u32, ObjectError> {
-    if !(1..=OBJECT_MAX_SIZE).contains(&size) {
-        Err(ObjectError::Size)
-    } else {
-        Ok((size - 1) as u32 | (kind as u32) << 24)
+    pub fn read_from_buf(buf: &[u8]) -> Result<Self, ObjectError> {
+        if buf.len() < HEADER {
+            Err(ObjectError::Header)
+        } else {
+            let hash = Hash::from_slice(&buf[HASH_RANGE]).unwrap();
+            let infobuf: [u8; 4] = buf[INFO_RANGE].try_into().unwrap();
+            let info = u32::from_le_bytes(infobuf);
+            Ok(Self { hash, info })
+        }
+    }
+
+    pub fn write_to_buf(&self, buf: &mut [u8]) -> Result<(), ObjectError> {
+        if buf.len() < HEADER {
+            Err(ObjectError::Header)
+        } else {
+            buf[HASH_RANGE].copy_from_slice(self.hash.as_bytes());
+            buf[INFO_RANGE].copy_from_slice(&self.info.to_le_bytes());
+            Ok(())
+        }
     }
 }
-
-fn build_header(data: &[u8], kind: u8) -> Result<(Hash, u32), ObjectError> {
-    let info = build_info(data.len(), kind)?;
-    let hash = Hash::compute_with_info(info, data);
-    Ok((hash, info))
-}
-
-fn extract_info(buf: &[u8]) -> (usize, u8) {
-    let info = u32::from_le_bytes(buf.try_into().unwrap());
-    let size = ((info & 0x00ffffff) + 1) as usize;
-    let kind = (info >> 24) as u8;
-    (size, kind)
-}
-
-fn extract_header(buf: &[u8]) -> Result<(Hash, usize, u8), ObjectError> {
-    if buf.len() < HEADER {
-        Err(ObjectError::Header)
-    } else {
-        let hash = Hash::from_slice(&buf[0..DIGEST]).unwrap();
-        let (size, kind) = extract_info(&buf[INFO_RANGE]);
-        Ok((hash, size, kind))
-    }
-}
-
-pub fn build_object_header(kind: u8, data: &[u8]) {}
 
 pub struct Object<'a> {
     buf: &'a [u8],
@@ -74,30 +78,88 @@ pub struct MutObject<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hashing::random_hash;
 
     #[test]
-    fn test_build_info() {
-        assert_eq!(build_info(0, 0), Err(ObjectError::Size));
-        assert_eq!(build_info(0, 255), Err(ObjectError::Size));
-        assert_eq!(build_info(OBJECT_MAX_SIZE + 1, 0), Err(ObjectError::Size));
-        assert_eq!(build_info(OBJECT_MAX_SIZE + 1, 255), Err(ObjectError::Size));
+    fn test_objectheader_build() {
+        assert_eq!(ObjectHeader::build(0, &[]), Err(ObjectError::DataLen));
+        let mut buf = Vec::with_capacity(OBJECT_MAX_SIZE + 1);
+        buf.resize(OBJECT_MAX_SIZE + 1, 0);
+        assert_eq!(ObjectHeader::build(0, &buf), Err(ObjectError::DataLen));
 
-        assert_eq!(build_info(1, 0), Ok(0));
-        assert_eq!(build_info(1, 255), Ok(255 << 24));
+        // buf.len() == OBJECT_MAX_SIZE, kind == 0
+        buf.resize(OBJECT_MAX_SIZE, 0);
+        let header = ObjectHeader::build(0, &buf).unwrap();
         assert_eq!(
-            build_info(OBJECT_MAX_SIZE, 0),
-            Ok((OBJECT_MAX_SIZE - 1) as u32)
+            header.hash(),
+            &Hash::from_z32(
+                b"JQB5YVD8CFCYE8U7RWETQG6AEVKQ9IMBLQMI7YWUXALXUZ75THLNOI6NUJ7KQXJDFFTYE9R8"
+            )
+            .unwrap()
         );
-        assert_eq!(build_info(OBJECT_MAX_SIZE, 255), Ok(u32::MAX));
+        assert_eq!(header.size(), OBJECT_MAX_SIZE);
+        assert_eq!(header.kind(), 0);
+
+        // buf.len() == OBJECT_MAX_SIZE, kind == 255
+        let header = ObjectHeader::build(255, &buf).unwrap(); // Now with kind=255
+        assert_eq!(
+            header.hash(),
+            &Hash::from_z32(
+                b"AVB4LLC5H5CT9GFMEC95GPHBXYBUMYBLBEJR7DA9NAV7GKPJN8XMVYD6JPWZHFGKMXWOLHUN"
+            )
+            .unwrap()
+        );
+        assert_eq!(header.size(), OBJECT_MAX_SIZE);
+        assert_eq!(header.kind(), 255);
+
+        // buf.len() == 1, kind == 0
+        let header = ObjectHeader::build(0, &[0; 1]).unwrap();
+        assert_eq!(
+            header.hash(),
+            &Hash::from_z32(
+                b"YGTGOPMKOD7MTSKCPJAV4MH5YR6RJRDPHGTGUS5NVWTCRVIMJIXPEZFDHGPFYFCNPSOA8FRY"
+            )
+            .unwrap()
+        );
+        assert_eq!(header.size(), 1);
+        assert_eq!(header.kind(), 0);
+
+        // buf.len() == 1, kind == 255
+        let header = ObjectHeader::build(255, &[0; 1]).unwrap();
+        assert_eq!(
+            header.hash(),
+            &Hash::from_z32(
+                b"SPTBWZITNEAYLFZPHS44L5KFNVG8JMGF9ZZB8NHQSOJUI65PR7HH6X7TELW77OMYPQ68KF8B"
+            )
+            .unwrap()
+        );
+        assert_eq!(header.size(), 1);
+        assert_eq!(header.kind(), 255);
     }
 
     #[test]
-    fn test_extract_info() {
-        assert_eq!(extract_info(&[0, 0, 0, 0]), (1, 0));
-        assert_eq!(extract_info(&[0, 0, 0, 255]), (1, 255));
-        assert_eq!(extract_info(&[1, 0, 0, 0]), (2, 0));
-        assert_eq!(extract_info(&[1, 0, 0, 255]), (2, 255));
-        assert_eq!(extract_info(&[255, 255, 255, 0]), (OBJECT_MAX_SIZE, 0));
-        assert_eq!(extract_info(&[255, 255, 255, 255]), (OBJECT_MAX_SIZE, 255));
+    fn test_objectheader_read_from_buf() {
+        assert_eq!(ObjectHeader::read_from_buf(&[]), Err(ObjectError::Header));
+        assert_eq!(
+            ObjectHeader::read_from_buf(&[42; HEADER - 1]),
+            Err(ObjectError::Header)
+        );
+        let header = ObjectHeader::read_from_buf(&[42; HEADER]).unwrap();
+        assert_eq!(header.hash(), &Hash::from_bytes([42; DIGEST]));
+        assert_eq!(header.size(), 2763307);
+        assert_eq!(header.kind(), 42);
+
+        let header = ObjectHeader::read_from_buf(&[0; HEADER]).unwrap();
+        assert_eq!(header.hash(), &Hash::from_bytes([0; DIGEST]));
+        assert_eq!(header.size(), 1);
+        assert_eq!(header.kind(), 0);
+
+        let header = ObjectHeader::read_from_buf(&[255; HEADER]).unwrap();
+        assert_eq!(header.hash(), &Hash::from_bytes([255; DIGEST]));
+        assert_eq!(header.size(), OBJECT_MAX_SIZE);
+        assert_eq!(header.kind(), 255);
     }
+
+    #[test]
+    fn test_objectheader_write_to_buf() {}
 }

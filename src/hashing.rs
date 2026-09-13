@@ -124,10 +124,10 @@ impl Hash {
         Self::from_bytes(output.into())
     }
 
-    pub fn compute_with_info(info: u32, input: &[u8]) -> Self {
+    pub fn compute_with_info(info: u32, data: &[u8]) -> Self {
         let mut hasher = Blake2b360::new();
         hasher.update(&info.to_le_bytes());
-        hasher.update(input);
+        hasher.update(data);
         let output = hasher.finalize();
         Self::from_bytes(output.into())
     }
