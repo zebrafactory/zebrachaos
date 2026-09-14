@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(object.header(), &header);
         assert_eq!(object.data(), b"Some stuff");
 
-        /// Header with wrong kind
+        // Header with wrong kind
         let header2 = ObjectHeader::build(69, b"Some stuff").unwrap();
         let header = ObjectHeader::new(header.hash().clone(), header2.info);
         assert_eq!(

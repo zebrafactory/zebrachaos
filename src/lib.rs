@@ -10,6 +10,8 @@ mod always;
 mod hashing;
 mod object;
 
-pub use always::{DIGEST, HEADER, HEXDIGEST, Z32DIGEST};
+pub use always::{
+    DIGEST, HASH_RANGE, HEADER, HEXDIGEST, INFO, INFO_RANGE, OBJECT_MAX_SIZE, Z32DIGEST,
+};
 pub use hashing::Hash;
 pub use object::{Object, ObjectError, ObjectHeader};
