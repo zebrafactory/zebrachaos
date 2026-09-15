@@ -76,6 +76,11 @@ impl ObjectHeader {
         &self.hash
     }
 
+    /// Info bytes (size + kind)
+    pub fn info(&self) -> u32 {
+        self.info
+    }
+
     /// Size of object data in bytes (extracted from info field).
     pub fn size(&self) -> usize {
         ((self.info & 0x00ffffff) + 1) as usize

@@ -8,10 +8,13 @@
 
 mod always;
 mod hashing;
+mod index;
 mod object;
+mod store;
 
 pub use always::{
     DIGEST, HASH_RANGE, HEADER, HEXDIGEST, INFO, INFO_RANGE, OBJECT_MAX_SIZE, Z32DIGEST,
 };
 pub use hashing::Hash;
+pub use index::{Index, Item};
 pub use object::{Object, ObjectError, ObjectHeader};
