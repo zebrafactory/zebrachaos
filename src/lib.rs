@@ -7,6 +7,7 @@
 //!
 
 mod always;
+mod fsutil;
 mod hashing;
 mod index;
 mod object;

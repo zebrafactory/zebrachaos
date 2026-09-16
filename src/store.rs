@@ -1,12 +1,7 @@
+use crate::fsutil::{create_for_append, open_for_append, read_exact_at};
 use crate::{HEADER, Hash, Index, Item, Object, ObjectHeader};
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
-
-#[cfg(not(windows))]
-use std::os::unix::fs::FileExt;
-
-#[cfg(windows)]
-use std::os::windows::fs::FileExt;
 
 pub struct Store {
     file: File,
@@ -23,42 +18,6 @@ impl Store {
             self.file.write_all(&header)?;
             self.file.write_all(object.data())?;
             Ok(true)
-        }
-    }
-
-    #[cfg(not(windows))]
-    #[inline]
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> io::Result<()> {
-        self.file.read_exact_at(buf, offset)
-    }
-
-    #[cfg(windows)]
-    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> io::Result<()> {
-        // FIXME: There should totally be a seek_read_exact() method for Winders.
-        let mut buf = buf;
-        let mut offset = offset;
-        while !buf.is_empty() {
-            match self.file.seek_read(buf, offset) {
-                Ok(0) => {
-                    break;
-                }
-                Ok(n) => {
-                    buf = &mut buf[n..];
-                    offset += n as u64;
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-        }
-        if !buf.is_empty() {
-            Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "failed to read object header plus object data",
-            ))
-        } else {
-            Ok(())
         }
     }
 }
