@@ -1,12 +1,17 @@
-use crate::{HEADER, Hash, Object, ObjectHeader};
+use crate::{Hash, ObjectHeader};
 use std::collections::HashMap;
 
+/// A value in the [Index] map.
 pub struct Entry {
+    /// The 4 byte object info (3 byte size + 1 byte kind).
     pub info: u32,
+
+    /// File offset at which the object header starts.
     pub offset: u64,
 }
 
 impl Entry {
+    /// Construct an [Entry].
     pub fn new(info: u32, offset: u64) -> Self {
         Self { info, offset }
     }
@@ -23,17 +28,20 @@ impl Item {
     }
 }
 
+/// An in-memmory index using [std::collections::HashMap].
 pub struct Index {
     map: HashMap<Hash, Entry>,
 }
 
 impl Index {
+    /// Create a new, empty index.
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
         }
     }
 
+    /// Lookup an entry by object hash.
     pub fn get(&self, hash: &Hash) -> Option<Item> {
         if let Some(entry) = self.map.get(hash) {
             let header = ObjectHeader::new(hash.clone(), entry.info);
@@ -43,6 +51,7 @@ impl Index {
         }
     }
 
+    /// Add a new entry in the index using provided header and offset.
     pub fn insert(&mut self, header: ObjectHeader, offset: u64) {
         let entry = Entry::new(header.info(), offset);
         if let Some(previous) = self.map.insert(header.hash().clone(), entry) {

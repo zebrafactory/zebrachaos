@@ -1,7 +1,7 @@
 // File system related utilities.
 
 use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
 #[cfg(unix)]
@@ -61,6 +61,7 @@ mod tests {
     use super::*;
     use crate::{Hash, OBJECT_MAX_SIZE};
     use getrandom;
+    use std::io::Write;
     use tempfile;
 
     #[test]
@@ -72,12 +73,25 @@ mod tests {
 
         getrandom::fill(&mut buf).unwrap();
         let hash = Hash::compute(&buf);
+        let hash2 = Hash::compute(&buf[69..]);
+        let hash3 = Hash::compute(&buf[69..OBJECT_MAX_SIZE - 42]);
         file.write_all(&buf).unwrap();
         buf.clear();
         buf.resize(OBJECT_MAX_SIZE, 0);
 
         read_exact_at(&mut file, &mut buf, 0).unwrap();
         assert_eq!(Hash::compute(&buf), hash);
+
+        buf.clear();
+        buf.resize(OBJECT_MAX_SIZE - 69, 0);
+        assert!(read_exact_at(&mut file, &mut buf, 70).is_err());
+        read_exact_at(&mut file, &mut buf, 69).unwrap();
+        assert_eq!(Hash::compute(&buf), hash2);
+
+        buf.clear();
+        buf.resize(OBJECT_MAX_SIZE - 69 - 42, 0);
+        read_exact_at(&mut file, &mut buf, 69).unwrap();
+        assert_eq!(Hash::compute(&buf), hash3);
     }
 
     #[test]
