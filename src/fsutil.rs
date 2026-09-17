@@ -13,13 +13,12 @@ pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Res
 }
 
 #[cfg(windows)]
-pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     // FIXME: There should totally be a seek_read_exact() method for the Winders.
     // https://github.com/rust-lang/libs-team/issues/634
+    // https://github.com/rust-lang/rust/issues/162868
     use std::os::windows::fs::FileExt;
 
-    let mut buf = buf;
-    let mut offset = offset;
     while !buf.is_empty() {
         match file.seek_read(buf, offset) {
             Ok(0) => {
