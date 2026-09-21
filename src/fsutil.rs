@@ -5,10 +5,14 @@ use std::io;
 use std::path::Path;
 
 #[cfg(unix)]
+use std::os::unix::fs::FileExt;
+
+#[cfg(windows)]
+use std::os::windows::fs::FileExt;
+
+#[cfg(unix)]
 #[inline]
 pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
-    use std::os::unix::fs::FileExt;
-
     file.read_exact_at(buf, offset)
 }
 
@@ -18,15 +22,11 @@ pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Res
 
 #[cfg(all(windows, nightly))]
 pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
-    use std::os::windows::fs::FileExt;
-
     file.seek_read_exact(buf, offset)
 }
 
 #[cfg(all(windows, not(nightly)))]
 pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
-    use std::os::windows::fs::FileExt;
-
     while !buf.is_empty() {
         match file.seek_read(buf, offset) {
             Ok(0) => {
