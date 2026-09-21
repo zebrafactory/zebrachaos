@@ -11,13 +11,13 @@ use std::os::unix::fs::FileExt;
 use std::os::windows::fs::FileExt;
 
 #[cfg(unix)]
-#[inline]
 pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     file.read_exact_at(buf, offset)
 }
 
 // FIXME: There should totally be a seek_read_exact() method for the Winders.
 // https://github.com/rust-lang/libs-team/issues/634
+// And now there totally is a seek_read_exact() method in Rust nightly!
 // https://github.com/rust-lang/rust/issues/162868
 
 #[cfg(all(windows, nightly))]
