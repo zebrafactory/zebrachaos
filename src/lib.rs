@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(windows, feature(seek_read_exact_seek_write_all))]
 
 //! 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
 //!

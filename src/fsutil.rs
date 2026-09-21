@@ -18,30 +18,34 @@ pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) ->
     // https://github.com/rust-lang/libs-team/issues/634
     // https://github.com/rust-lang/rust/issues/162868
     use std::os::windows::fs::FileExt;
+    println!("seek_read_exact: {} {}", buf.len(), offset);
+    file.seek_read_exact(buf, offset)
 
-    while !buf.is_empty() {
-        match file.seek_read(buf, offset) {
-            Ok(0) => {
-                break;
-            }
-            Ok(n) => {
-                buf = &mut buf[n..];
-                offset += n as u64;
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => {
-                return Err(e);
+    /*
+        while !buf.is_empty() {
+            match file.seek_read(buf, offset) {
+                Ok(0) => {
+                    break;
+                }
+                Ok(n) => {
+                    buf = &mut buf[n..];
+                    offset += n as u64;
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => {
+                    return Err(e);
+                }
             }
         }
-    }
-    if !buf.is_empty() {
-        Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "failed to read object header plus object data",
-        ))
-    } else {
-        Ok(())
-    }
+        if !buf.is_empty() {
+            Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "failed to read object header plus object data",
+            ))
+        } else {
+            Ok(())
+        }
+    */
 }
 
 pub(crate) fn create_for_append(path: &Path) -> io::Result<File> {
