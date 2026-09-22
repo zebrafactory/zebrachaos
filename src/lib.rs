@@ -19,4 +19,4 @@ pub use always::{
 };
 pub use hashing::Hash;
 pub use index::{Index, Item};
-pub use object::{Object, ObjectError, ObjectHeader};
+pub use object::{Object, ObjectError, ObjectHeader, ObjectHeaderResult, ObjectResult};

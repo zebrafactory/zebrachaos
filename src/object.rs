@@ -1,6 +1,10 @@
 use crate::Hash;
 use crate::always::*;
 
+pub type ObjectResult<'a> = Result<Object<'a>, ObjectError>;
+
+pub type ObjectHeaderResult = Result<ObjectHeader, ObjectError>;
+
 /// Error returned when building and validating objects.
 #[derive(Debug, PartialEq)]
 pub enum ObjectError {
@@ -68,6 +72,17 @@ impl ObjectHeader {
             Err(ObjectError::Hash)
         } else {
             Ok(Object { header: self, data })
+        }
+    }
+
+    /// Valadite object data against this header.
+    pub fn verify(&self, data: &[u8]) -> Result<(), ObjectError> {
+        if self.size() != data.len() {
+            Err(ObjectError::DataLen)
+        } else if self.hash != Hash::compute_with_info(self.info, data) {
+            Err(ObjectError::Hash)
+        } else {
+            Ok(())
         }
     }
 
