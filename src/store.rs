@@ -18,7 +18,7 @@ impl<'a, R: Read> ObjectStreamIter<'a, R> {
         }
     }
 
-    fn next_inner(&mut self) -> io::Result<ObjectHeaderResult> {
+    fn next_inner(&mut self) -> io::Result<ObjectHeader> {
         self.buf.resize(HEADER, 0);
         self.file.read_exact(&mut self.buf)?;
 
@@ -29,17 +29,17 @@ impl<'a, R: Read> ObjectStreamIter<'a, R> {
 
         // But that doesn't mean we have the correct corresponding obejct data, so this can fail.
         match header.verify(&self.buf[HEADER..]) {
-            Err(err) => {
+            Err(obj_err) => {
                 self.is_closed = true;
-                Ok(Err(err))
+                Err(io::Error::other("invalid object data"))
             }
-            Ok(_) => Ok(Ok(header)),
+            Ok(_) => Ok(header),
         }
     }
 }
 
 impl<'a, R: Read> Iterator for ObjectStreamIter<'a, R> {
-    type Item = io::Result<ObjectHeaderResult>;
+    type Item = io::Result<ObjectHeader>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_closed {
@@ -50,7 +50,7 @@ impl<'a, R: Read> Iterator for ObjectStreamIter<'a, R> {
                     self.is_closed = true;
                     Some(Err(io_err))
                 }
-                Ok(header_result) => Some(Ok(header_result)),
+                Ok(header) => Some(Ok(header)),
             }
         }
     }
