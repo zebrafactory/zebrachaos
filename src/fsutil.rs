@@ -128,13 +128,34 @@ mod tests {
 
         let tmpdir = tempfile::TempDir::new().unwrap();
         let filename = tmpdir.path().join("foo.data");
-        let mut file = create_for_append(&filename).unwrap();
 
-        let count = 512;
+        let count = 256;
         let mut map: HashMap<Hash, (usize, u64)> = HashMap::new();
         let mut data: Vec<u8> = Vec::with_capacity(65536);
         let mut offset = 0;
 
+        let mut file = create_for_append(&filename).unwrap();
+        for _ in 0..count {
+            let mut sizebuf = [0; 2];
+            getrandom::fill(&mut sizebuf).unwrap();
+            let size = u16::from_le_bytes(sizebuf) as usize + 1;
+            assert!((1..=65536).contains(&size));
+
+            data.resize(size, 0);
+            getrandom::fill(&mut data).unwrap();
+            let hash = Hash::compute(&data);
+            file.write_all(&data).unwrap();
+            assert!(map.insert(hash, (size, offset)).is_none());
+            offset += size as u64;
+
+            for (hash, (size, off)) in &map {
+                data.resize(*size, 0);
+                read_exact_at(&file, &mut data, *off).unwrap();
+                assert_eq!(hash, &Hash::compute(&data));
+            }
+        }
+
+        let mut file = open_for_append(&filename).unwrap();
         for _ in 0..count {
             let mut sizebuf = [0; 2];
             getrandom::fill(&mut sizebuf).unwrap();
