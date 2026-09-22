@@ -69,6 +69,7 @@ mod tests {
     use super::*;
     use crate::{Hash, OBJECT_MAX_SIZE};
     use getrandom;
+    use std::collections::HashMap;
     use std::io::Write;
     use tempfile;
 
@@ -117,5 +118,42 @@ mod tests {
         assert!(open_for_append(&filename).is_err());
         assert!(create_for_append(&filename).is_ok());
         assert!(open_for_append(&filename).is_ok());
+    }
+
+    #[test]
+    fn test_positional_reads_plus_append_only_writes() {
+        // Make sure we are getting the same semantics cross-platform.
+        // Note seek_read() moves the freakin' cursor, but in theory
+        // we should get the same write behavior if we open in append mode.
+
+        let tmpdir = tempfile::TempDir::new().unwrap();
+        let filename = tmpdir.path().join("foo.data");
+        let mut file = create_for_append(&filename).unwrap();
+
+        let count = 1024;
+        let mut map: HashMap<Hash, (usize, u64)> = HashMap::new();
+        let mut data: Vec<u8> = Vec::with_capacity(65536);
+        let mut offset = 0;
+
+        for _ in 0..count {
+            let mut sizebuf = [0; 2];
+            getrandom::fill(&mut sizebuf).unwrap();
+            let size = (u16::from_le_bytes(sizebuf) as usize) + 1;
+            assert!((1..65536).contains(&size));
+
+            data.resize(size, 0);
+            getrandom::fill(&mut data).unwrap();
+            let hash = Hash::compute(&data);
+            file.write_all(&data).unwrap();
+
+            assert!(map.insert(hash, (size, offset)).is_none());
+            offset += size as u64;
+
+            for (hash, (size, off)) in &map {
+                data.resize(*size, 0);
+                read_exact_at(&file, &mut data, *off).unwrap();
+                assert_eq!(hash, &Hash::compute(&data));
+            }
+        }
     }
 }

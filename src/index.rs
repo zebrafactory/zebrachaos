@@ -17,12 +17,14 @@ impl Entry {
     }
 }
 
+// This is what is retrieved from an [Index].
 pub struct Item {
     pub header: ObjectHeader,
     pub offset: u64,
 }
 
 impl Item {
+    /// Construct a new [Item].
     pub fn new(header: ObjectHeader, offset: u64) -> Self {
         Self { header, offset }
     }
