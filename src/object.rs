@@ -76,13 +76,13 @@ impl ObjectHeader {
     }
 
     /// Valadite object data against this header.
-    pub fn verify(&self, data: &[u8]) -> Result<(), ObjectError> {
+    pub fn verify(self, data: &[u8]) -> ObjectHeaderResult {
         if self.size() != data.len() {
             Err(ObjectError::DataLen)
         } else if self.hash != Hash::compute_with_info(self.info, data) {
             Err(ObjectError::Hash)
         } else {
-            Ok(())
+            Ok(self)
         }
     }
 

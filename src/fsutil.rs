@@ -43,10 +43,7 @@ pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) ->
         }
     }
     if !buf.is_empty() {
-        Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "failed to read object header plus object data",
-        ))
+        Err(io::Error::new(io::ErrorKind::UnexpectedEof, 67))
     } else {
         Ok(())
     }

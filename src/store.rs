@@ -17,40 +17,40 @@ impl<'a, R: Read> ObjectStreamIter<'a, R> {
             is_closed: false,
         }
     }
-
-    fn next_inner(&mut self) -> io::Result<ObjectHeader> {
-        self.buf.resize(HEADER, 0);
-        self.file.read_exact(&mut self.buf)?;
-
-        // All headers are valid as long as they are the correct length, so just .unwrap()
-        let header = ObjectHeader::read_from_buf(&self.buf).unwrap();
-        self.buf.resize(HEADER + header.size(), 0);
-        self.file.read_exact(&mut self.buf[HEADER..])?;
-
-        // But that doesn't mean we have the correct corresponding obejct data, so this can fail.
-        match header.verify(&self.buf[HEADER..]) {
-            Err(obj_err) => {
-                self.is_closed = true;
-                Err(io::Error::other("invalid object data"))
-            }
-            Ok(_) => Ok(header),
-        }
-    }
 }
 
 impl<'a, R: Read> Iterator for ObjectStreamIter<'a, R> {
-    type Item = io::Result<ObjectHeader>;
+    type Item = io::Result<ObjectHeaderResult>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_closed {
             None
         } else {
-            match self.next_inner() {
-                Err(io_err) => {
-                    self.is_closed = true;
-                    Some(Err(io_err))
+            self.buf.resize(HEADER, 0);
+            self.is_closed = true;
+            match self.file.read(self.buf) {
+                Ok(0) => None,
+                Ok(n) => Some(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "could not read full header",
+                ))),
+                Err(err) => Some(Err(err)),
+                Ok(HEADER) => {
+                    // All headers are valid as long as they are the correct length, so just .unwrap()
+                    let header = ObjectHeader::read_from_buf(&self.buf).unwrap();
+                    self.buf.resize(HEADER + header.size(), 0);
+                    match self.file.read_exact(&mut self.buf[HEADER..]) {
+                        Err(err) => Some(Err(err)),
+                        Ok(_) => {
+                            // But that doesn't mean we have valid object data
+                            let result = header.verify(&self.buf[HEADER..]);
+                            if result.is_ok() {
+                                self.is_closed = false;
+                            }
+                            Some(Ok(result))
+                        }
+                    }
                 }
-                Ok(header) => Some(Ok(header)),
             }
         }
     }
@@ -83,5 +83,13 @@ mod tests {
     #[test]
     fn test_store() {
         let mut file = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+
+        {
+            let mut iter = ObjectStreamIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            assert!(iter.next().is_none());
+            assert!(iter.is_closed);
+        }
     }
 }
