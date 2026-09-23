@@ -43,7 +43,10 @@ pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) ->
         }
     }
     if !buf.is_empty() {
-        Err(io::Error::new(io::ErrorKind::UnexpectedEof, 67))
+        Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "failed to fill buffer",
+        ))
     } else {
         Ok(())
     }
