@@ -30,11 +30,6 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
             self.buf.resize(HEADER, 0);
             match self.file.read(self.buf) {
                 Ok(0) => None,
-                Ok(n) => Some(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "could not read full header",
-                ))),
-                Err(err) => Some(Err(err)),
                 Ok(HEADER) => {
                     // All headers are valid as long as they are the correct length, so just .unwrap()
                     let header = ObjectHeader::read_from_buf(&self.buf).unwrap();
@@ -55,6 +50,11 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                         }
                     }
                 }
+                Ok(n) => Some(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "could not read full header",
+                ))),
+                Err(err) => Some(Err(err)),
             }
         }
     }
@@ -163,9 +163,28 @@ mod tests {
                 io::ErrorKind::UnexpectedEof
             );
             assert!(iter.is_closed);
-            assert_eq!(iter.buf, &[0; HEADER]);
         }
-        assert_eq!(buf.len(), HEADER);
-        assert_eq!(&buf[..HEADER], &[0; HEADER]);
+        assert_eq!(buf.len(), HEADER + 1);
+        assert_eq!(&buf, &[0; HEADER + 1]);
+    }
+
+    #[test]
+    fn test_object_iter_case_4() {
+        // file is (HEADER + 1) bytes long, but hash is wrong
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+        file.write_all(&[0; HEADER + 1]).unwrap();
+        file.rewind().unwrap();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::Other
+            );
+            assert!(iter.is_closed);
+        }
+        assert_eq!(buf.len(), HEADER + 1);
+        assert_eq!(&buf, &[0; HEADER + 1]);
     }
 }
