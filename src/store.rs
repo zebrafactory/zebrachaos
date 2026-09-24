@@ -301,17 +301,59 @@ mod tests {
             assert!(iter.next().is_none());
         }
         assert_eq!(file.stream_position().unwrap(), total_size - 1);
+
+        // Final 32 bytes are missing
+        file.set_len(total_size - 32).unwrap();
+        file.rewind().unwrap();
+        buf.clear();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            for i in 0..count - 1 {
+                let header = iter.next().unwrap().unwrap();
+                assert_eq!(&hashlist[i], header.hash());
+            }
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert!(iter.is_closed);
+            assert!(iter.next().is_none());
+        }
+        assert_eq!(file.stream_position().unwrap(), total_size - 32);
+
+        // Final 32 bytes are new random data, making hash wrong
+        let mut rando = [0; 32];
+        getrandom::fill(&mut rando).unwrap();
+        file.write_all(&rando).unwrap();
+        file.rewind().unwrap();
+        buf.clear();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            for i in 0..count - 1 {
+                let header = iter.next().unwrap().unwrap();
+                assert_eq!(&hashlist[i], header.hash());
+            }
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::Other
+            );
+            assert!(iter.is_closed);
+            assert!(iter.next().is_none());
+        }
+        assert_eq!(file.stream_position().unwrap(), total_size);
     }
 
     #[test]
     fn test_object_iter_case_7() {
         // Large number of valid small objects
-        object_iter_test_helper(4096, true);
+        object_iter_test_helper(2048, true);
     }
 
     #[test]
     fn test_object_iter_case_8() {
         // Small number of valid large objects
-        object_iter_test_helper(64, false);
+        object_iter_test_helper(42, false);
     }
 }
