@@ -1,7 +1,6 @@
-use crate::fsutil::{create_for_append, open_for_append, read_exact_at};
-use crate::{HEADER, Hash, Index, Item, Object, ObjectError, ObjectHeader, ObjectHeaderResult};
+use crate::{HEADER, Index, Object, ObjectHeader};
 use std::fs::File;
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, Read, Write};
 
 pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
@@ -42,15 +41,13 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                                     self.is_closed = false;
                                     Some(Ok(header))
                                 }
-                                Err(obj_err) => {
-                                    Some(Err(io::Error::other("hash no matchy matchy")))
-                                }
+                                Err(_) => Some(Err(io::Error::other("hash no matchy matchy"))),
                             }
                         }
                         Err(err) => Some(Err(err)),
                     }
                 }
-                Ok(n) => Some(Err(io::Error::new(
+                Ok(_n) => Some(Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "could not read full header",
                 ))),
@@ -67,7 +64,7 @@ pub struct Store {
 
 impl Store {
     pub fn save(&mut self, object: &Object) -> io::Result<bool> {
-        if let Some(item) = self.index.get(object.header().hash()) {
+        if let Some(_item) = self.index.get(object.header().hash()) {
             Ok(false)
         } else {
             let mut header = [0; HEADER];
@@ -83,8 +80,9 @@ impl Store {
 mod tests {
     use super::*;
     use crate::testhelpers::random_object;
-    use crate::{DIGEST, OBJECT_MAX_SIZE};
+    use crate::{DIGEST, Hash, OBJECT_MAX_SIZE};
     use getrandom;
+    use std::io::Seek;
     use tempfile;
 
     #[test]
@@ -93,7 +91,7 @@ mod tests {
         struct MockFile {}
 
         impl Read for MockFile {
-            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
                 panic!("should not be called");
             }
         }
@@ -247,7 +245,7 @@ mod tests {
             let hash = random_object(&mut buf, small);
             total_size += buf.len() as u64;
             hashlist.push(hash);
-            file.write_all(&buf);
+            file.write_all(&buf).unwrap();
         }
 
         // All good

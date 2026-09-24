@@ -56,7 +56,7 @@ impl Index {
     /// Add a new entry in the index using provided header and offset.
     pub fn insert(&mut self, header: ObjectHeader, offset: u64) {
         let entry = Entry::new(header.info(), offset);
-        if let Some(previous) = self.map.insert(header.hash().clone(), entry) {
+        if let Some(_previous) = self.map.insert(header.hash().clone(), entry) {
             panic!("Duplicate key in Index: {}", header.hash());
         }
     }

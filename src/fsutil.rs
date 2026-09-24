@@ -11,7 +11,7 @@ use std::os::unix::fs::FileExt;
 use std::os::windows::fs::FileExt;
 
 #[cfg(unix)]
-pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     file.read_exact_at(buf, offset)
 }
 
@@ -21,12 +21,12 @@ pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Res
 // https://github.com/rust-lang/rust/issues/162868
 
 #[cfg(all(windows, nightly))]
-pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     file.seek_read_exact(buf, offset)
 }
 
 #[cfg(all(windows, not(nightly)))]
-pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
         match file.seek_read(buf, offset) {
             Ok(0) => {
@@ -52,7 +52,7 @@ pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) ->
     }
 }
 
-pub(crate) fn create_for_append(path: &Path) -> io::Result<File> {
+pub fn create_for_append(path: &Path) -> io::Result<File> {
     File::options()
         .read(true)
         .append(true)
@@ -60,7 +60,7 @@ pub(crate) fn create_for_append(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
-pub(crate) fn open_for_append(path: &Path) -> io::Result<File> {
+pub fn open_for_append(path: &Path) -> io::Result<File> {
     File::options().read(true).append(true).open(path)
 }
 
