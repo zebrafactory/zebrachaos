@@ -82,6 +82,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testhelpers::random_object;
     use crate::{DIGEST, OBJECT_MAX_SIZE};
     use getrandom;
     use tempfile;
@@ -234,5 +235,24 @@ mod tests {
             assert!(iter.is_closed);
         }
         assert_eq!(buf.len(), HEADER);
+    }
+
+    #[test]
+    fn test_object_iter_case_7() {
+        //Mulitple valid objects
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = vec![0; HEADER + OBJECT_MAX_SIZE];
+        let count = 64;
+        let mut hashlist: Vec<Hash> = Vec::with_capacity(count);
+        for _ in 0..count {
+            let hash = random_object(&mut buf);
+            hashlist.push(hash);
+            file.write_all(&buf);
+        }
+        file.rewind().unwrap();
+        for (i, result) in ObjectIter::new(&mut file, &mut buf).enumerate() {
+            let header = result.unwrap();
+            assert_eq!(&hashlist[i], header.hash());
+        }
     }
 }

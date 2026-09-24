@@ -1,9 +1,6 @@
 use blake2::{Blake2b, Digest, digest::consts::U45};
 use subtle::{Choice, ConstantTimeEq};
 
-#[cfg(test)]
-use getrandom;
-
 type Blake2b360 = Blake2b<U45>;
 
 /// Size of hash output digest (360 bits, 45 bytes).
@@ -84,14 +81,6 @@ fn zbase32_dec_into(src: &[u8], dst: &mut [u8]) -> Result<(), Zbase32Error> {
         dst[b + 4] = taxi as u8;
     }
     Ok(())
-}
-
-/// Returns a random [blake3::Hash] created with [getrandom::fill()].
-#[cfg(test)]
-pub fn random_hash() -> Hash {
-    let mut buf = [0; DIGEST];
-    getrandom::fill(&mut buf).unwrap();
-    Hash::from_bytes(buf)
 }
 
 /// Error when trying to decode a hex encoded [Hash](crate::Hash).
@@ -247,6 +236,7 @@ impl core::fmt::Display for Hash {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testhelpers::random_hash;
 
     #[test]
     fn test_zbase32_enc_into() {

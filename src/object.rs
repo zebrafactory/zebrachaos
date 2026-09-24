@@ -157,7 +157,7 @@ impl<'a> Object<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hashing::random_hash;
+    use crate::testhelpers::random_hash;
     use getrandom;
 
     #[test]

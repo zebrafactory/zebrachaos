@@ -65,7 +65,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hashing::random_hash;
+    use crate::testhelpers::random_hash;
 
     #[test]
     fn test_index_new() {
