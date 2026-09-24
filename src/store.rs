@@ -237,15 +237,12 @@ mod tests {
         assert_eq!(buf.len(), HEADER);
     }
 
-    #[test]
-    fn test_object_iter_case_7() {
-        //Mulitple valid objects
+    fn object_stream_helper(count: usize, small: bool) {
         let mut file = tempfile::tempfile().unwrap();
         let mut buf = vec![0; HEADER + OBJECT_MAX_SIZE];
-        let count = 64;
         let mut hashlist: Vec<Hash> = Vec::with_capacity(count);
         for _ in 0..count {
-            let hash = random_object(&mut buf);
+            let hash = random_object(&mut buf, small);
             hashlist.push(hash);
             file.write_all(&buf);
         }
@@ -254,5 +251,17 @@ mod tests {
             let header = result.unwrap();
             assert_eq!(&hashlist[i], header.hash());
         }
+    }
+
+    #[test]
+    fn test_object_iter_case_7() {
+        // Large number of valid small objects
+        object_stream_helper(4096, true);
+    }
+
+    #[test]
+    fn test_object_iter_case_8() {
+        // Small number of valid large objects
+        object_stream_helper(128, false);
     }
 }

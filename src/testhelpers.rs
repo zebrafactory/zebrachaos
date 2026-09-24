@@ -1,11 +1,14 @@
 use crate::{DIGEST, HASH_RANGE, HEADER, Hash, INFO_RANGE};
 use getrandom;
 
-pub fn random_object(buf: &mut Vec<u8>) -> Hash {
+pub fn random_object(buf: &mut Vec<u8>, small: bool) -> Hash {
     // Generate random 4 byte info (all are valid)
-    buf.resize(HEADER, 0);
     let mut info = [0; 4];
     getrandom::fill(&mut info).unwrap();
+    if small {
+        info[2] = 0;
+    }
+    buf.resize(HEADER, 0);
     buf[INFO_RANGE].copy_from_slice(&info);
 
     // Resize buffer based on size in info
