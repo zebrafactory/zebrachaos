@@ -20,14 +20,14 @@ impl<'a, R: Read> ObjectIter<'a, R> {
 }
 
 impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
-    type Item = io::Result<ObjectHeaderResult>;
+    type Item = io::Result<ObjectHeader>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_closed {
             None
         } else {
-            self.buf.resize(HEADER, 0);
             self.is_closed = true;
+            self.buf.resize(HEADER, 0);
             match self.file.read(self.buf) {
                 Ok(0) => None,
                 Ok(n) => Some(Err(io::Error::new(
@@ -43,11 +43,15 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                         Err(err) => Some(Err(err)),
                         Ok(_) => {
                             // But that doesn't mean we have valid object data
-                            let result = header.verify(&self.buf[HEADER..]);
-                            if result.is_ok() {
-                                self.is_closed = false;
+                            match header.verify(&self.buf[HEADER..]) {
+                                Err(obj_err) => {
+                                    Some(Err(io::Error::other("hash no matchy matchy")))
+                                }
+                                Ok(header) => {
+                                    self.is_closed = false;
+                                    Some(Ok(header))
+                                }
                             }
-                            Some(Ok(result))
                         }
                     }
                 }
@@ -121,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn test_object_stream_iter_case_2() {
+    fn test_object_iter_case_2() {
         // Single byte if file... This will return Some(Err(err)) as this is
         // a partially written object that cannot be validated
         let mut file = tempfile::tempfile().unwrap();
