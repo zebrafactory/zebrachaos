@@ -35,19 +35,19 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                     let header = ObjectHeader::read_from_buf(&self.buf).unwrap();
                     self.buf.resize(HEADER + header.size(), 0);
                     match self.file.read_exact(&mut self.buf[HEADER..]) {
-                        Err(err) => Some(Err(err)),
                         Ok(_) => {
                             // But that doesn't mean we have valid object data
                             match header.verify(&self.buf[HEADER..]) {
-                                Err(obj_err) => {
-                                    Some(Err(io::Error::other("hash no matchy matchy")))
-                                }
                                 Ok(header) => {
                                     self.is_closed = false;
                                     Some(Ok(header))
                                 }
+                                Err(obj_err) => {
+                                    Some(Err(io::Error::other("hash no matchy matchy")))
+                                }
                             }
                         }
+                        Err(err) => Some(Err(err)),
                     }
                 }
                 Ok(n) => Some(Err(io::Error::new(
@@ -82,6 +82,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{DIGEST, OBJECT_MAX_SIZE};
     use getrandom;
     use tempfile;
 
@@ -186,5 +187,52 @@ mod tests {
         }
         assert_eq!(buf.len(), HEADER + 1);
         assert_eq!(&buf, &[0; HEADER + 1]);
+    }
+
+    #[test]
+    fn test_object_iter_case_5() {
+        // One valid 1-byte object
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = vec![0; HEADER + 1];
+        buf[HEADER..].copy_from_slice(&[69; 1]);
+        let hash = Hash::compute_with_info(0, &[69; 1]);
+        buf[..DIGEST].copy_from_slice(hash.as_bytes());
+        file.write_all(&buf).unwrap();
+        file.rewind().unwrap();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            let header = iter.next().unwrap().unwrap();
+            assert!(!iter.is_closed);
+            assert_eq!(header.hash(), &hash);
+            assert_eq!(header.size(), 1);
+            assert_eq!(header.kind(), 0);
+            assert!(iter.next().is_none());
+            assert!(iter.is_closed);
+        }
+        assert_eq!(buf.len(), HEADER);
+    }
+
+    #[test]
+    fn test_object_iter_case_6() {
+        // One valid OBJECT_MAX_SIZE byte object
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = vec![255; HEADER + OBJECT_MAX_SIZE];
+        let hash = Hash::compute(&buf[DIGEST..]);
+        buf[..DIGEST].copy_from_slice(hash.as_bytes());
+        file.write_all(&buf).unwrap();
+        file.rewind().unwrap();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            let header = iter.next().unwrap().unwrap();
+            assert!(!iter.is_closed);
+            assert_eq!(header.hash(), &hash);
+            assert_eq!(header.size(), OBJECT_MAX_SIZE);
+            assert_eq!(header.kind(), 255);
+            assert!(iter.next().is_none());
+            assert!(iter.is_closed);
+        }
+        assert_eq!(buf.len(), HEADER);
     }
 }

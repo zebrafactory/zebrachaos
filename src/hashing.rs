@@ -129,6 +129,7 @@ impl Hash {
 
     /// Compute ZebraChaos object hash using provided `info` and `data`.
     pub fn compute_with_info(info: u32, data: &[u8]) -> Self {
+        assert_eq!(((info & 0x00ffffff) + 1) as usize, data.len());
         let mut hasher = Blake2b360::new();
         hasher.update(&info.to_le_bytes());
         hasher.update(data);
