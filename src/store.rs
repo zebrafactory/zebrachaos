@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_object_iter_case_2() {
-        // Single byte if file... This will return Some(Err(err)) as this is
+        // Single byte in file... This will return Some(Err(err)) as this is
         // a partially written object that cannot be validated
         let mut file = tempfile::tempfile().unwrap();
         let mut buf = Vec::new();
@@ -237,31 +237,81 @@ mod tests {
         assert_eq!(buf.len(), HEADER);
     }
 
-    fn object_stream_helper(count: usize, small: bool) {
+    fn object_iter_test_helper(count: usize, small: bool) {
         let mut file = tempfile::tempfile().unwrap();
         let mut buf = vec![0; HEADER + OBJECT_MAX_SIZE];
+
+        let mut total_size = 0_u64;
         let mut hashlist: Vec<Hash> = Vec::with_capacity(count);
         for _ in 0..count {
             let hash = random_object(&mut buf, small);
+            total_size += buf.len() as u64;
             hashlist.push(hash);
             file.write_all(&buf);
         }
+
+        // All good
         file.rewind().unwrap();
         for (i, result) in ObjectIter::new(&mut file, &mut buf).enumerate() {
             let header = result.unwrap();
             assert_eq!(&hashlist[i], header.hash());
         }
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(iter.next().is_none());
+        }
+        assert_eq!(file.stream_position().unwrap(), total_size);
+
+        // One extra byte is present (partially written header)
+        file.write_all(b"4").unwrap();
+        file.rewind().unwrap();
+        buf.clear();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            for i in 0..count {
+                let header = iter.next().unwrap().unwrap();
+                assert_eq!(&hashlist[i], header.hash());
+            }
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert!(iter.is_closed);
+            assert!(iter.next().is_none());
+        }
+        assert_eq!(file.stream_position().unwrap(), total_size + 1);
+
+        // Final byte is missing
+        file.set_len(total_size - 1).unwrap();
+        file.rewind().unwrap();
+        buf.clear();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            for i in 0..count - 1 {
+                let header = iter.next().unwrap().unwrap();
+                assert_eq!(&hashlist[i], header.hash());
+            }
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert!(iter.is_closed);
+            assert!(iter.next().is_none());
+        }
+        assert_eq!(file.stream_position().unwrap(), total_size - 1);
     }
 
     #[test]
     fn test_object_iter_case_7() {
         // Large number of valid small objects
-        object_stream_helper(4096, true);
+        object_iter_test_helper(4096, true);
     }
 
     #[test]
     fn test_object_iter_case_8() {
         // Small number of valid large objects
-        object_stream_helper(128, false);
+        object_iter_test_helper(64, false);
     }
 }
