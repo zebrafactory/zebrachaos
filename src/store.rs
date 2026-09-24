@@ -3,13 +3,13 @@ use crate::{HEADER, Hash, Index, Item, Object, ObjectError, ObjectHeader, Object
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 
-pub struct ObjectStreamIter<'a, R: Read> {
+pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
     buf: &'a mut Vec<u8>,
     is_closed: bool,
 }
 
-impl<'a, R: Read> ObjectStreamIter<'a, R> {
+impl<'a, R: Read> ObjectIter<'a, R> {
     pub fn new(file: &'a mut R, buf: &'a mut Vec<u8>) -> Self {
         Self {
             file,
@@ -19,7 +19,7 @@ impl<'a, R: Read> ObjectStreamIter<'a, R> {
     }
 }
 
-impl<'a, R: Read> Iterator for ObjectStreamIter<'a, R> {
+impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
     type Item = io::Result<ObjectHeaderResult>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -78,18 +78,90 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use getrandom;
     use tempfile;
 
     #[test]
-    fn test_store() {
-        let mut file = tempfile::tempfile().unwrap();
-        let mut buf = Vec::new();
+    fn test_object_iter_case_0() {
+        // read() should not be called when ObjectIter.is_closed is true
+        struct MockFile {}
 
+        impl Read for MockFile {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                panic!("should not be called");
+            }
+        }
+
+        let mut file = MockFile {};
+        let mut buf = Vec::new();
         {
-            let mut iter = ObjectStreamIter::new(&mut file, &mut buf);
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
             assert!(!iter.is_closed);
+            iter.is_closed = true;
             assert!(iter.next().is_none());
             assert!(iter.is_closed);
         }
+    }
+
+    #[test]
+    fn test_object_iter_case_1() {
+        // Empty file, read() returns Ok(0) on first call
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            assert!(iter.next().is_none());
+            assert!(iter.is_closed);
+            assert!(iter.next().is_none());
+            assert!(iter.is_closed);
+        }
+        assert_eq!(file.stream_position().unwrap(), 0);
+        assert_eq!(&buf, &[0; HEADER]);
+    }
+
+    #[test]
+    fn test_object_stream_iter_case_2() {
+        // Single byte if file... This will return Some(Err(err)) as this is
+        // a partially written object that cannot be validated
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+        file.write_all(b"4").unwrap();
+        file.rewind().unwrap();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert!(iter.is_closed);
+        }
+        assert_eq!(buf.len(), HEADER);
+        assert_ne!(&buf, &[0; HEADER]);
+        assert_eq!(&buf[..1], b"4");
+        assert_eq!(&buf[1..], &[0; HEADER - 1]);
+        assert_eq!(file.stream_position().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_object_iter_case_3() {
+        // file is HEADER bytes long, but is missing expected 1 byte of object data
+        let mut file = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+        file.write_all(&[0; HEADER]).unwrap();
+        file.rewind().unwrap();
+        {
+            let mut iter = ObjectIter::new(&mut file, &mut buf);
+            assert!(!iter.is_closed);
+            assert_eq!(
+                iter.next().unwrap().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert!(iter.is_closed);
+            assert_eq!(iter.buf, &[0; HEADER]);
+        }
+        assert_eq!(buf.len(), HEADER);
+        assert_eq!(&buf[..HEADER], &[0; HEADER]);
     }
 }
