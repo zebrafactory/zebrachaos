@@ -20,12 +20,15 @@ pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()>
 // And now there totally is a seek_read_exact() method in Rust nightly!
 // https://github.com/rust-lang/rust/issues/162868
 
+/*
+FIXME: Add a "nightly" feature instead of trying to detect that we are building on nightly
 #[cfg(all(windows, nightly))]
 pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     file.seek_read_exact(buf, offset)
 }
+*/
 
-#[cfg(all(windows, not(nightly)))]
+#[cfg(windows)]
 pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
         match file.seek_read(buf, offset) {
