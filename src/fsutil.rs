@@ -77,6 +77,8 @@ mod tests {
     #[cfg(all(windows, feature = "nightly"))]
     fn test_seek_read_exact_seek_write_all() {
         // Make sure windows FileExt.seek_read_exact(), .seek_write_all() are available
+        use std::io::Seek;
+
         let mut file = tempfile::tempfile().unwrap();
         let mut data = [0; 420];
         getrandom::fill(&mut data).unwrap();

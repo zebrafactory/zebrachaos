@@ -1,4 +1,4 @@
-name: Rust Nightly
+name: Unstable Nightly Features
 
 on:
   push:
