@@ -1,4 +1,4 @@
-name: Rust Nightly Features
+name: Rust Nightly
 
 on:
   push:
@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  just-like-in-the-matrix:
+  unstable-nightly-features:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

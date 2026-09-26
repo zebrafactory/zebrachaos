@@ -74,6 +74,21 @@ mod tests {
     use tempfile;
 
     #[test]
+    #[cfg(all(windows, feature = "nightly"))]
+    fn test_seek_read_exact_seek_write_all() {
+        // Make sure windows FileExt.seek_read_exact(), .seek_write_all() are available
+        let mut file = tempfile::tempfile().unwrap();
+        let mut data = [0; 420];
+        getrandom::fill(&mut data).unwrap();
+        let data = data;
+        file.seek_write_all(&data, 0).unwrap();
+        let mut buf = [0; 42];
+        file.seek_read_exact(&mut buf, 22);
+        assert_eq(&buf, &data[22..64]);
+        assert_eq!(file.stream_position().unwrap(), 64);
+    }
+
+    #[test]
     fn test_read_exact_at() {
         let mut file = tempfile::tempfile().unwrap();
         let mut buf = vec![0; OBJECT_MAX_SIZE];
