@@ -86,7 +86,7 @@ mod tests {
         file.seek_write_all(&data, 0).unwrap();
         let mut buf = [0; 42];
         file.seek_read_exact(&mut buf, 22);
-        assert_eq(&buf, &data[22..64]);
+        assert_eq!(&buf, &data[22..64]);
         assert_eq!(file.stream_position().unwrap(), 64);
     }
 
