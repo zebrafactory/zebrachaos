@@ -21,7 +21,7 @@ pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()>
 // https://github.com/rust-lang/rust/issues/162868
 
 #[cfg(all(windows, feature = "nightly"))]
-pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     file.seek_read_exact(buf, offset)
 }
 
