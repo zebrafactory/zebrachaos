@@ -43,6 +43,10 @@ impl Index {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
+
     /// Lookup an entry by object hash.
     pub fn get(&self, hash: &Hash) -> Option<Item> {
         if let Some(entry) = self.map.get(hash) {

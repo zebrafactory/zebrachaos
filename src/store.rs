@@ -1,6 +1,6 @@
 use crate::{HEADER, Index, Object, ObjectHeader};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Read, Seek, Write};
 
 pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
@@ -35,7 +35,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                     self.buf.resize(HEADER + header.size(), 0);
                     match self.file.read_exact(&mut self.buf[HEADER..]) {
                         Ok(_) => {
-                            // But that doesn't mean we have valid object data
+                            // But that doesn't mean we have the correct corresponding object data
                             match header.verify(&self.buf[HEADER..]) {
                                 Ok(header) => {
                                     self.is_closed = false;
@@ -57,12 +57,40 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
     }
 }
 
+pub struct ObjectStreamReader {
+    pub file: File,
+    pub buf: Vec<u8>,
+}
+
 pub struct Store {
     file: File,
     index: Index,
+    offset: u64,
 }
 
 impl Store {
+    pub fn new(file: File) -> Self {
+        Self {
+            file,
+            index: Index::new(),
+            offset: 0,
+        }
+    }
+
+    pub fn reindex(&mut self) -> io::Result<()> {
+        self.index.clear();
+        self.offset = 0;
+        self.file.rewind()?;
+        let mut file = BufReader::with_capacity(64 * 1024, self.file.try_clone()?);
+        let mut buf = Vec::new();
+        for result in ObjectIter::new(&mut file, &mut buf) {
+            let header = result?;
+            self.offset += (HEADER + header.size()) as u64;
+            self.index.insert(header, self.offset);
+        }
+        Ok(())
+    }
+
     pub fn save(&mut self, object: &Object) -> io::Result<bool> {
         if let Some(_item) = self.index.get(object.header().hash()) {
             Ok(false)
@@ -82,7 +110,6 @@ mod tests {
     use crate::testhelpers::random_object;
     use crate::{DIGEST, Hash, OBJECT_MAX_SIZE};
     use getrandom;
-    use std::io::Seek;
     use tempfile;
 
     #[test]
@@ -353,5 +380,21 @@ mod tests {
     fn test_object_iter_case_8() {
         // Small number of valid large objects
         object_iter_test_helper(42, false);
+    }
+
+    #[test]
+    fn test_store_reindex() {
+        let file = tempfile::tempfile().unwrap();
+        let mut store = Store::new(file);
+        assert!(store.reindex().is_ok());
+        let count = 512;
+        let mut buf = Vec::new();
+        let mut hashlist: Vec<Hash> = Vec::new();
+        for _ in 0..count {
+            let hash = random_object(&mut buf, true);
+            hashlist.push(hash);
+            store.file.write_all(&buf).unwrap();
+        }
+        assert!(store.reindex().is_ok());
     }
 }
