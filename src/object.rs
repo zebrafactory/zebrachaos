@@ -101,9 +101,19 @@ impl ObjectHeader {
         ((self.info & 0x00ffffff) + 1) as usize
     }
 
+    /// Size of full object (header + data)
+    pub fn full_size(&self) -> usize {
+        HEADER + self.size()
+    }
+
     /// Object kind (extracted from info field).
     pub fn kind(&self) -> u8 {
         (self.info >> 24) as u8
+    }
+
+    /// Consume instance, returning hash.
+    pub fn into_hash(self) -> Hash {
+        self.hash
     }
 
     /// Read and extract 49 byte [ObjectHeader] from a buffer.

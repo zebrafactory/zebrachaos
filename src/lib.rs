@@ -13,7 +13,6 @@
 mod always;
 mod fsutil;
 mod hashing;
-mod index;
 mod object;
 mod store;
 
@@ -25,6 +24,5 @@ pub use always::{
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::Hash;
-pub use index::{Index, Item};
 pub use object::{Object, ObjectError, ObjectHeader, ObjectHeaderResult, ObjectResult};
 pub use store::{ObjectIter, Store};

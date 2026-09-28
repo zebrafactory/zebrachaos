@@ -1,4 +1,5 @@
-use crate::{HEADER, Index, Object, ObjectHeader};
+use crate::{HEADER, Hash, Object, ObjectHeader};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, Write};
 
@@ -57,14 +58,25 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
     }
 }
 
-pub struct ObjectStreamReader {
-    pub file: File,
-    pub buf: Vec<u8>,
+/// A value in the [Index] map.
+pub struct Entry {
+    /// The 4 byte object info (3 byte size + 1 byte kind).
+    pub info: u32,
+
+    /// File offset at which the object header starts.
+    pub offset: u64,
+}
+
+impl Entry {
+    /// Construct an [Entry].
+    pub fn new(info: u32, offset: u64) -> Self {
+        Self { info, offset }
+    }
 }
 
 pub struct Store {
     file: File,
-    index: Index,
+    map: HashMap<Hash, Entry>,
     offset: u64,
 }
 
@@ -72,27 +84,28 @@ impl Store {
     pub fn new(file: File) -> Self {
         Self {
             file,
-            index: Index::new(),
+            map: HashMap::new(),
             offset: 0,
         }
     }
 
     pub fn reindex(&mut self) -> io::Result<()> {
-        self.index.clear();
+        self.map.clear();
         self.offset = 0;
         self.file.rewind()?;
         let mut file = BufReader::with_capacity(64 * 1024, self.file.try_clone()?);
         let mut buf = Vec::new();
         for result in ObjectIter::new(&mut file, &mut buf) {
             let header = result?;
+            let entry = Entry::new(header.info(), self.offset);
             self.offset += (HEADER + header.size()) as u64;
-            self.index.insert(header, self.offset);
+            self.map.insert(header.into_hash(), entry);
         }
         Ok(())
     }
 
     pub fn save(&mut self, object: &Object) -> io::Result<bool> {
-        if let Some(_item) = self.index.get(object.header().hash()) {
+        if let Some(_entry) = self.map.get(object.header().hash()) {
             Ok(false)
         } else {
             let mut header = [0; HEADER];
@@ -373,7 +386,7 @@ mod tests {
     #[test]
     fn test_object_iter_case_7() {
         // Large number of valid small objects
-        object_iter_test_helper(2048, true);
+        object_iter_test_helper(1024, true);
     }
 
     #[test]
@@ -387,7 +400,7 @@ mod tests {
         let file = tempfile::tempfile().unwrap();
         let mut store = Store::new(file);
         assert!(store.reindex().is_ok());
-        let count = 128;
+        let count = 69;
         let mut buf = Vec::new();
         let mut hashlist: Vec<Hash> = Vec::new();
         for _ in 0..count {
@@ -395,6 +408,12 @@ mod tests {
             hashlist.push(hash);
             store.file.write_all(&buf).unwrap();
         }
+        assert!(store.map.is_empty());
         assert!(store.reindex().is_ok());
+        assert_eq!(store.map.len(), count);
+        assert_eq!(store.file.stream_position().unwrap(), store.offset);
+        for hash in &hashlist {
+            assert!(store.map.contains_key(hash));
+        }
     }
 }

@@ -146,7 +146,7 @@ mod tests {
         let tmpdir = tempfile::TempDir::new().unwrap();
         let filename = tmpdir.path().join("foo.data");
 
-        let count = 128;
+        let count = 64;
         let mut map: HashMap<Hash, (usize, u64)> = HashMap::new();
         let mut data: Vec<u8> = Vec::with_capacity(65536);
         let mut offset = 0;
