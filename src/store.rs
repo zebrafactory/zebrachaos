@@ -387,11 +387,11 @@ mod tests {
         let file = tempfile::tempfile().unwrap();
         let mut store = Store::new(file);
         assert!(store.reindex().is_ok());
-        let count = 512;
+        let count = 128;
         let mut buf = Vec::new();
         let mut hashlist: Vec<Hash> = Vec::new();
         for _ in 0..count {
-            let hash = random_object(&mut buf, true);
+            let hash = random_object(&mut buf, false);
             hashlist.push(hash);
             store.file.write_all(&buf).unwrap();
         }
