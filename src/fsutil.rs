@@ -77,7 +77,8 @@ mod tests {
     #[cfg(all(windows, feature = "nightly"))]
     fn test_seek_read_exact_seek_write_all() {
         // Make sure windows FileExt.seek_read_exact(), .seek_write_all() are available
-        use std::io::Seek;
+        use std::io::{BorrowedBuf, Seek};
+        use std::mem::MaybeUninit;
 
         let mut file = tempfile::tempfile().unwrap();
         let mut data = [0; 420];
@@ -85,9 +86,16 @@ mod tests {
         let data = data;
         file.seek_write_all(&data, 0).unwrap();
         let mut buf = [0; 42];
-        file.seek_read_exact(&mut buf, 22);
+        file.seek_read_exact(&mut buf, 22).unwrap();
         assert_eq!(&buf, &data[22..64]);
         assert_eq!(file.stream_position().unwrap(), 64);
+
+        // Make sure .seek_read_buf_exact() is available
+        let mut buf: [MaybeUninit<u8>; 11] = [MaybeUninit::uninit(); 11];
+        let mut buf = BorrowedBuf::from(buf.as_mut_slice());
+        file.seek_read_buf_exact(buf.unfilled(), 69).unwrap();
+        assert_eq!(buf.filled(), &data[69..80]);
+        assert_eq!(file.stream_position().unwrap(), 80);
     }
 
     #[test]
