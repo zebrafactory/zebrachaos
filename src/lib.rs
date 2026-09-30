@@ -3,7 +3,10 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(
     all(windows, feature = "nightly"),
-    feature(seek_read_exact_seek_write_all),
+    feature(seek_read_exact_seek_write_all)
+)]
+#![cfg_attr(
+    all(test, windows, feature = "nightly"),
     feature(core_io_borrowed_buf)
 )]
 
