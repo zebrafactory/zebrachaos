@@ -14,6 +14,9 @@ pub enum ObjectError {
     /// Length of object data does not match expected value.
     DataLen,
 
+    /// Length of full buffer does not match expected value.
+    BufLen,
+
     /// Length of object data is zero or greater than `OBJECT_MAX_SIZE`.
     DataLenBounds,
 
@@ -63,15 +66,15 @@ impl ObjectHeader {
 
     /// Valadite object data against this header.
     ///
-    /// If you need access to this `ObjectHeader` instance  and `data` after this method succeeds,
+    /// If you need access to this `ObjectHeader` instance  and `buf` after this method succeeds,
     /// use [Object::header()] and [Object::data()].
-    pub fn verify_object<'a>(self, data: &'a [u8]) -> Result<Object<'a>, ObjectError> {
-        if self.size() != data.len() {
-            Err(ObjectError::DataLen)
-        } else if self.hash != Hash::compute_with_info(self.info, data) {
+    pub fn validate_object<'a>(self, buf: &'a [u8]) -> Result<Object<'a>, ObjectError> {
+        if self.full_size() != buf.len() {
+            Err(ObjectError::BufLen)
+        } else if self.hash != Hash::compute(&buf[DIGEST..]) {
             Err(ObjectError::Hash)
         } else {
-            Ok(Object { header: self, data })
+            Ok(Object { header: self, buf })
         }
     }
 
@@ -143,24 +146,29 @@ impl ObjectHeader {
 #[derive(Debug, PartialEq)]
 pub struct Object<'a> {
     header: ObjectHeader,
-    data: &'a [u8],
+    buf: &'a [u8],
 }
 
 impl<'a> Object<'a> {
-    /// Build and object of `kind` with `data`.
-    pub fn build(kind: u8, data: &'a [u8]) -> Result<Object<'a>, ObjectError> {
-        let header = ObjectHeader::build(kind, data)?;
-        Ok(Self { header, data })
+    pub fn validate(buf: &'a [u8]) -> Result<Self, ObjectError> {
+        let header = ObjectHeader::read_from_buf(buf)?;
+        header.validate_object(buf)
     }
 
-    /// Reference to [ObjectHeader].
+    pub fn into_header(self) -> ObjectHeader {
+        self.header
+    }
+
     pub fn header(&self) -> &ObjectHeader {
         &self.header
     }
 
-    /// Reference to the object data.
-    pub fn data(&self) -> &[u8] {
-        self.data
+    pub fn as_buf(&self) -> &[u8] {
+        self.buf
+    }
+
+    pub fn as_data(&self) -> &[u8] {
+        &self.buf[HEADER..]
     }
 }
 
@@ -231,30 +239,20 @@ mod tests {
     }
 
     #[test]
-    fn test_objectheader_verify_object() {
-        let header = ObjectHeader::build(42, b"Some stuff").unwrap();
-        assert_eq!(
-            header.clone().verify_object(b"Some stuf"),
-            Err(ObjectError::DataLen)
-        );
-        assert_eq!(
-            header.clone().verify_object(b"Some stuffs"),
-            Err(ObjectError::DataLen)
-        );
-        assert_eq!(
-            header.clone().verify_object(b"Some stuft"),
-            Err(ObjectError::Hash)
-        );
-        let object = header.clone().verify_object(b"Some stuff").unwrap();
-        assert_eq!(object.header(), &header);
-        assert_eq!(object.data(), b"Some stuff");
+    fn test_objectheader_validate_object() {
+        let data = b"How is Rust so awesome, question mark";
+        let header = ObjectHeader::build(42, data).unwrap();
+        let mut buf = vec![0; HEADER];
+        header.write_to_buf(&mut buf).unwrap();
+        buf.extend_from_slice(data);
+        let obj = header.validate_object(&mut buf).unwrap();
+        assert_eq!(obj.as_data(), data);
 
-        // Header with wrong kind
-        let header2 = ObjectHeader::build(69, b"Some stuff").unwrap();
-        let header = ObjectHeader::new(header.hash().clone(), header2.info);
+        let header = obj.into_header();
+        buf.extend_from_slice(b"b");
         assert_eq!(
-            header.clone().verify_object(b"Some stuff"),
-            Err(ObjectError::Hash)
+            header.validate_object(&mut buf).unwrap_err(),
+            ObjectError::BufLen
         );
     }
 

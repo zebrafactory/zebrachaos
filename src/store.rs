@@ -108,10 +108,7 @@ impl Store {
         if let Some(_entry) = self.map.get(object.header().hash()) {
             Ok(false)
         } else {
-            let mut header = [0; HEADER];
-            object.header().write_to_buf(&mut header).unwrap();
-            self.file.write_all(&header)?;
-            self.file.write_all(object.data())?;
+            self.file.write_all(object.as_buf())?;
             Ok(true)
         }
     }
@@ -122,7 +119,7 @@ impl Store {
                 let header = ObjectHeader::new(*hash, entry.info);
                 buf.resize(header.full_size(), 0);
                 read_exact_at(&self.file, buf, entry.offset)?;
-                match header.verify_object(&buf[HEADER..]) {
+                match header.validate_object(buf) {
                     Ok(obj) => Ok(obj),
                     Err(_obj_err) => Err(io::Error::other("hash no match")),
                 }
