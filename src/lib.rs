@@ -1,6 +1,5 @@
-#![forbid(unsafe_code)]
+#![forbid(unsafe_code, unused_must_use, rustdoc::broken_intra_doc_links)]
 //#![warn(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(
     all(windows, feature = "nightly"),
     feature(seek_read_exact_seek_write_all)
@@ -21,9 +20,10 @@ mod store;
 pub mod testhelpers;
 
 pub use always::{
-    DIGEST, HASH_RANGE, HEADER, HEXDIGEST, INFO, INFO_RANGE, OBJECT_MAX_SIZE, Z32DIGEST,
+    BUFFER_MAX_SIZE, BUFFER_MIN_SIZE, DIGEST, HASH_RANGE, HEADER, HEXDIGEST, INFO, INFO_RANGE,
+    OBJECT_MAX_SIZE, Z32DIGEST,
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::Hash;
-pub use object::{Object, ObjectError, ObjectHeader, ObjectHeaderResult, ObjectResult};
+pub use object::{Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};

@@ -18,6 +18,12 @@ pub const HEADER: usize = DIGEST + INFO;
 /// Max size of an Object (2^24, 16777216 bytes)
 pub const OBJECT_MAX_SIZE: usize = 16777216;
 
+/// Minimum size of a valid CHAOS framed buffer (header + data).
+pub const BUFFER_MIN_SIZE: usize = HEADER + 1;
+
+/// Maximum size of a valid CHAOS framed buffer (header + data).
+pub const BUFFER_MAX_SIZE: usize = HEADER + OBJECT_MAX_SIZE;
+
 /// Location of Hash within object buffer.
 pub const HASH_RANGE: Range<usize> = 0..DIGEST;
 

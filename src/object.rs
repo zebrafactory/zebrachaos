@@ -1,24 +1,26 @@
 use crate::Hash;
 use crate::always::*;
 
-pub type ObjectResult<'a> = Result<Object<'a>, ObjectError>;
-
-pub type ObjectHeaderResult = Result<ObjectHeader, ObjectError>;
-
 /// Error returned when building and validating objects.
 #[derive(Debug, PartialEq)]
 pub enum ObjectError {
-    /// Bytes need for header (49) not availabel in buffer.
+    /// Length of full buffer does not match expected value.
+    BufLen,
+
+    /// Buffer length outside `(HEADER + 1..HEADER + OBJECT_MAX_SIZE)`
+    BufLenBounds,
+
+    /// Bytes needed for header are not available in buffer.
     HeaderLen,
 
     /// Length of object data does not match expected value.
     DataLen,
 
-    /// Length of full buffer does not match expected value.
-    BufLen,
-
     /// Length of object data is zero or greater than `OBJECT_MAX_SIZE`.
     DataLenBounds,
+
+    ///
+    Content,
 
     /// Hash computed over object info and data does not match expected hash.
     Hash,
@@ -79,7 +81,7 @@ impl ObjectHeader {
     }
 
     /// Valadite object data against this header.
-    pub fn verify(self, data: &[u8]) -> ObjectHeaderResult {
+    pub fn verify(self, data: &[u8]) -> Result<ObjectHeader, ObjectError> {
         if self.size() != data.len() {
             Err(ObjectError::DataLen)
         } else if self.hash != Hash::compute_with_info(self.info, data) {
@@ -172,11 +174,22 @@ impl<'a> Object<'a> {
     }
 }
 
+pub fn finalize_object<'a>(kind: u8, buf: &'a mut [u8]) -> Result<Object<'a>, ObjectError> {
+    if !(BUFFER_MIN_SIZE..=BUFFER_MAX_SIZE).contains(&buf.len()) {
+        Err(ObjectError::BufLenBounds)
+    } else {
+        let header = ObjectHeader::build(kind, &buf[HEADER..])?;
+        header.write_to_buf(buf)?;
+        Ok(Object { header, buf })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testhelpers::random_hash;
     use getrandom;
+    use std::collections::HashSet;
 
     #[test]
     fn test_objectheader_build() {
@@ -318,6 +331,42 @@ mod tests {
             assert_ne!(src, dst);
             header.write_to_buf(&mut dst).unwrap();
             assert_eq!(src, dst);
+        }
+    }
+
+    #[test]
+    fn test_finalize_object() {
+        let mut set: HashSet<Hash> = HashSet::with_capacity(512);
+        let mut buf = Vec::with_capacity(BUFFER_MAX_SIZE + 1);
+        for kind in 0..=255 {
+            assert_eq!(
+                finalize_object(kind, &mut []).unwrap_err(),
+                ObjectError::BufLenBounds
+            );
+            assert_eq!(
+                finalize_object(kind, &mut [0; HEADER]).unwrap_err(),
+                ObjectError::BufLenBounds
+            );
+            buf.clear();
+            buf.resize(HEADER + 1, 0);
+            let obj = finalize_object(kind, &mut buf).unwrap();
+            assert_eq!(obj.header().kind(), kind);
+            assert_eq!(obj.header.size(), 1);
+            assert!(set.insert(obj.into_header().into_hash()));
+            assert_eq!(buf[HEADER - 1], kind);
+
+            buf.resize(BUFFER_MAX_SIZE, 0);
+            let obj = finalize_object(kind, &mut buf).unwrap();
+            assert_eq!(obj.header().kind(), kind);
+            assert_eq!(obj.header().size(), OBJECT_MAX_SIZE);
+            assert!(set.insert(obj.into_header().into_hash()));
+            assert_eq!(buf[HEADER - 1], kind);
+
+            buf.resize(BUFFER_MAX_SIZE + 1, 0);
+            assert_eq!(
+                finalize_object(kind, &mut buf).unwrap_err(),
+                ObjectError::BufLenBounds
+            );
         }
     }
 }
