@@ -5,10 +5,7 @@
     all(windows, feature = "nightly"),
     feature(seek_read_exact_seek_write_all)
 )]
-#![cfg_attr(
-    all(test, windows, feature = "nightly"),
-    feature(core_io_borrowed_buf)
-)]
+#![cfg_attr(all(test, windows, feature = "nightly"), feature(core_io_borrowed_buf))]
 
 //! 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
 //!
