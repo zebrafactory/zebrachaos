@@ -1,4 +1,4 @@
-use crate::{HEADER, Hash, Object, ObjectHeader};
+use crate::{HEADER, Hash, Object, ObjectHeader, read_exact_at};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, Write};
@@ -113,6 +113,21 @@ impl Store {
             self.file.write_all(&header)?;
             self.file.write_all(object.data())?;
             Ok(true)
+        }
+    }
+
+    pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> io::Result<Object<'a>> {
+        match self.map.get(hash) {
+            Some(entry) => {
+                let header = ObjectHeader::new(*hash, entry.info);
+                buf.resize(header.full_size(), 0);
+                read_exact_at(&self.file, buf, entry.offset)?;
+                match header.verify_object(&buf[HEADER..]) {
+                    Ok(obj) => Ok(obj),
+                    Err(_obj_err) => Err(io::Error::other("hash no match")),
+                }
+            }
+            None => Err(io::Error::other("crap")),
         }
     }
 }
@@ -409,11 +424,18 @@ mod tests {
             store.file.write_all(&buf).unwrap();
         }
         assert!(store.map.is_empty());
+        for hash in &hashlist {
+            assert_eq!(
+                store.load(&hash, &mut buf).unwrap_err().kind(),
+                io::ErrorKind::Other
+            );
+        }
         assert!(store.reindex().is_ok());
         assert_eq!(store.map.len(), count);
         assert_eq!(store.file.stream_position().unwrap(), store.offset);
         for hash in &hashlist {
             assert!(store.map.contains_key(hash));
+            assert!(store.load(&hash, &mut buf).is_ok());
         }
     }
 }
