@@ -1,7 +1,10 @@
-use crate::{HEADER, Hash, Object, ObjectHeader, read_exact_at};
+use crate::{
+    HEADER, Hash, Object, ObjectHeader, create_for_append, open_for_append, read_exact_at,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, Write};
+use std::path::Path;
 
 pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
@@ -81,12 +84,28 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn new(file: File) -> Self {
+    fn new(file: File) -> Self {
         Self {
             file,
             map: HashMap::new(),
             offset: 0,
         }
+    }
+
+    pub fn into_file(self) -> File {
+        self.file
+    }
+
+    pub fn create(filename: &Path) -> io::Result<Self> {
+        let file = create_for_append(filename)?;
+        Ok(Self::new(file))
+    }
+
+    pub fn open(filename: &Path) -> io::Result<Self> {
+        let file = open_for_append(filename)?;
+        let mut store = Self::new(file);
+        store.reindex()?;
+        Ok(store)
     }
 
     pub fn reindex(&mut self) -> io::Result<()> {
@@ -102,6 +121,10 @@ impl Store {
             self.map.insert(header.into_hash(), entry);
         }
         Ok(())
+    }
+
+    pub fn contains(&self, hash: &Hash) -> bool {
+        self.map.contains_key(hash)
     }
 
     pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
@@ -411,6 +434,49 @@ mod tests {
     }
 
     #[test]
+    fn test_store_create() {
+        let tmpdir = tempfile::TempDir::new().unwrap();
+        let filename = tmpdir.path().join("chaos.data");
+        let store = Store::create(&filename).unwrap();
+        assert!(store.map.is_empty());
+
+        assert!(Store::create(&filename).is_err());
+    }
+
+    #[test]
+    fn test_store_open() {
+        let tmpdir = tempfile::TempDir::new().unwrap();
+        let filename = tmpdir.path().join("chaos.data");
+        let count = 69;
+        let mut hashlist = Vec::with_capacity(count);
+        let mut buf = Vec::with_capacity(BUFFER_MAX_SIZE);
+        {
+            assert!(Store::open(&filename).is_err());
+
+            create_for_append(&filename).unwrap();
+            let mut store = Store::open(&filename).unwrap();
+            assert!(store.map.is_empty());
+
+            for _ in 0..count {
+                let hash = random_object(&mut buf, false);
+                let obj = Object::validate(&buf).unwrap();
+                assert_eq!(obj.header().hash(), &hash);
+                store.save(&obj).unwrap();
+
+                hashlist.push(hash);
+            }
+        }
+
+        // Make sure .reindex() is getting called:
+        let store = Store::open(&filename).unwrap();
+        assert_eq!(store.map.len(), count);
+        for hash in &hashlist {
+            let obj = store.load(hash, &mut buf).unwrap();
+            assert_eq!(obj.header().hash(), hash);
+        }
+    }
+
+    #[test]
     fn test_store_reindex() {
         let file = tempfile::tempfile().unwrap();
         let mut store = Store::new(file);
@@ -448,10 +514,14 @@ mod tests {
         let mut hashlist = Vec::with_capacity(count);
         for _ in 0..count {
             let hash = random_object(&mut buf, false);
+            assert!(!store.contains(&hash));
             {
                 let obj = Object::validate(&buf).unwrap();
-                store.save(&obj).unwrap();
+                assert!(store.save(&obj).unwrap());
+                assert!(!store.save(&obj).unwrap());
             }
+            assert_eq!(store.file.stream_position().unwrap(), store.offset);
+            assert!(store.contains(&hash));
             buf.clear();
             {
                 let obj = store.load(&hash, &mut buf).unwrap();
@@ -460,8 +530,28 @@ mod tests {
             assert_eq!(hash, Hash::compute(&buf[DIGEST..]));
             hashlist.push(hash);
         }
+        assert_eq!(store.map.len(), count);
+        assert_eq!(store.file.stream_position().unwrap(), store.offset);
 
         for hash in &hashlist {
+            let obj = store.load(hash, &mut buf).unwrap();
+            assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
+        }
+        for hash in store.map.keys() {
+            let obj = store.load(hash, &mut buf).unwrap();
+            assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
+        }
+
+        let mut store = Store::new(store.into_file());
+        store.reindex().unwrap();
+        assert_eq!(store.file.stream_position().unwrap(), store.offset);
+        assert_eq!(store.map.len(), count);
+        assert_eq!(store.file.stream_position().unwrap(), store.offset);
+        for hash in &hashlist {
+            let obj = store.load(hash, &mut buf).unwrap();
+            assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
+        }
+        for hash in store.map.keys() {
             let obj = store.load(hash, &mut buf).unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
