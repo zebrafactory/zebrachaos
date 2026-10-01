@@ -32,7 +32,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                 Ok(0) => None,
                 Ok(HEADER) => {
                     // All headers are valid as long as they are the correct length, so just .unwrap()
-                    let header = ObjectHeader::read_from_buf(&self.buf).unwrap();
+                    let header = ObjectHeader::read_from_buf(self.buf).unwrap();
                     self.buf.resize(HEADER + header.size(), 0);
                     match self.file.read_exact(&mut self.buf[HEADER..]) {
                         Ok(_) => {
@@ -104,11 +104,14 @@ impl Store {
         Ok(())
     }
 
-    pub fn save(&mut self, object: &Object) -> io::Result<bool> {
-        if let Some(_entry) = self.map.get(object.header().hash()) {
+    pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
+        if let Some(_entry) = self.map.get(obj.header().hash()) {
             Ok(false)
         } else {
-            self.file.write_all(object.as_buf())?;
+            self.file.write_all(obj.as_buf())?;
+            let entry = Entry::new(obj.header().info(), self.offset);
+            self.map.insert(*obj.header().hash(), entry);
+            self.offset += obj.header().full_size() as u64;
             Ok(true)
         }
     }
@@ -133,7 +136,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::testhelpers::random_object;
-    use crate::{DIGEST, Hash, OBJECT_MAX_SIZE};
+    use crate::{BUFFER_MAX_SIZE, DIGEST, Hash, OBJECT_MAX_SIZE};
     use getrandom;
     use tempfile;
 
@@ -433,6 +436,34 @@ mod tests {
         for hash in &hashlist {
             assert!(store.map.contains_key(hash));
             assert!(store.load(&hash, &mut buf).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_store_save_load() {
+        let file = tempfile::tempfile().unwrap();
+        let mut store = Store::new(file);
+        let mut buf = Vec::with_capacity(BUFFER_MAX_SIZE);
+        let count = 32;
+        let mut hashlist = Vec::with_capacity(count);
+        for _ in 0..count {
+            let hash = random_object(&mut buf, false);
+            {
+                let obj = Object::validate(&buf).unwrap();
+                store.save(&obj).unwrap();
+            }
+            buf.clear();
+            {
+                let obj = store.load(&hash, &mut buf).unwrap();
+                assert_eq!(obj.header().hash(), &hash);
+            }
+            assert_eq!(hash, Hash::compute(&buf[DIGEST..]));
+            hashlist.push(hash);
+        }
+
+        for hash in &hashlist {
+            let obj = store.load(hash, &mut buf).unwrap();
+            assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
     }
 }

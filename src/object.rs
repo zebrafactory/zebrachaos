@@ -19,7 +19,7 @@ pub enum ObjectError {
     /// Length of object data is zero or greater than `OBJECT_MAX_SIZE`.
     DataLenBounds,
 
-    ///
+    /// Content hash does not match hash in framing buffer.
     Content,
 
     /// Hash computed over object info and data does not match expected hash.

@@ -1,4 +1,4 @@
-name: Rust Nightly
+name: Nightly
 
 on:
   push:
@@ -10,11 +10,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  unstable-nightly-features:
+  unstable-rust-nightly-features:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-latest, windows-latest, windows-11-arm]
+        os: [windows-latest, windows-11-arm]
         rust: [nightly]
     steps:
       - uses: actions/checkout@v7
