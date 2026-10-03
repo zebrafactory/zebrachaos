@@ -149,18 +149,20 @@ impl Store {
     }
 
     /// Load object into buffer, verifying on read.
-    pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> io::Result<Object<'a>> {
+    pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> Option<io::Result<Object<'a>>> {
         match self.map.get(hash) {
             Some(entry) => {
                 let header = ObjectHeader::new(*hash, entry.info);
                 buf.resize(header.full_size(), 0);
-                read_exact_at(&self.file, buf, entry.offset)?;
-                match header.validate_object(buf) {
-                    Ok(obj) => Ok(obj),
-                    Err(_obj_err) => Err(io::Error::other("hash no match")),
+                match read_exact_at(&self.file, buf, entry.offset) {
+                    Ok(_) => match header.validate_object(buf) {
+                        Ok(obj) => Some(Ok(obj)),
+                        Err(_obj_err) => Some(Err(io::Error::other("hash no match"))),
+                    },
+                    Err(err) => Some(Err(err)),
                 }
             }
-            None => Err(io::Error::other("crap")),
+            None => None,
         }
     }
 }
@@ -481,7 +483,7 @@ mod tests {
         let store = Store::open(&filename).unwrap();
         assert_eq!(store.map.len(), count);
         for hash in &hashlist {
-            let obj = store.load(hash, &mut buf).unwrap();
+            let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(obj.header().hash(), hash);
         }
     }
@@ -501,17 +503,14 @@ mod tests {
         }
         assert!(store.map.is_empty());
         for hash in &hashlist {
-            assert_eq!(
-                store.load(&hash, &mut buf).unwrap_err().kind(),
-                io::ErrorKind::Other
-            );
+            assert!(store.load(&hash, &mut buf).is_none());
         }
         assert!(store.reindex().is_ok());
         assert_eq!(store.map.len(), count);
         assert_eq!(store.file.stream_position().unwrap(), store.offset);
         for hash in &hashlist {
             assert!(store.map.contains_key(hash));
-            assert!(store.load(&hash, &mut buf).is_ok());
+            assert!(store.load(&hash, &mut buf).unwrap().is_ok());
         }
     }
 
@@ -534,7 +533,7 @@ mod tests {
             assert!(store.contains(&hash));
             buf.clear();
             {
-                let obj = store.load(&hash, &mut buf).unwrap();
+                let obj = store.load(&hash, &mut buf).unwrap().unwrap();
                 assert_eq!(obj.header().hash(), &hash);
             }
             assert_eq!(hash, Hash::compute(&buf[DIGEST..]));
@@ -544,11 +543,11 @@ mod tests {
         assert_eq!(store.file.stream_position().unwrap(), store.offset);
 
         for hash in &hashlist {
-            let obj = store.load(hash, &mut buf).unwrap();
+            let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
         for hash in store.map.keys() {
-            let obj = store.load(hash, &mut buf).unwrap();
+            let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
 
@@ -558,11 +557,11 @@ mod tests {
         assert_eq!(store.map.len(), count);
         assert_eq!(store.file.stream_position().unwrap(), store.offset);
         for hash in &hashlist {
-            let obj = store.load(hash, &mut buf).unwrap();
+            let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
         for hash in store.map.keys() {
-            let obj = store.load(hash, &mut buf).unwrap();
+            let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
         }
     }
