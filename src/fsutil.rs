@@ -11,6 +11,7 @@ use std::os::unix::fs::FileExt;
 use std::os::windows::fs::FileExt;
 
 #[cfg(unix)]
+/// Cross platform wrapper for `pread()` and `seek_read()`.
 pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     file.read_exact_at(buf, offset)
 }
@@ -21,11 +22,13 @@ pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()>
 // https://github.com/rust-lang/rust/issues/162868
 
 #[cfg(all(windows, feature = "nightly"))]
+/// Cross platform wrapper for `pread()` and `seek_read()`.
 pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     file.seek_read_exact(buf, offset)
 }
 
 #[cfg(all(windows, not(feature = "nightly")))]
+/// Cross platform wrapper for `pread()` and `seek_read()`.
 pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
         match file.seek_read(buf, offset) {
@@ -52,6 +55,7 @@ pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Re
     }
 }
 
+/// Create a new file in read + append mode.
 pub fn create_for_append(path: &Path) -> io::Result<File> {
     File::options()
         .read(true)
@@ -60,6 +64,7 @@ pub fn create_for_append(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
+/// Open an existing file in read + append mode.
 pub fn open_for_append(path: &Path) -> io::Result<File> {
     File::options().read(true).append(true).open(path)
 }

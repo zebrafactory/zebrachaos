@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::Path;
 
+/// Iterated through an object stream in anything implementing the Read trait.
 pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
     buf: &'a mut Vec<u8>,
@@ -13,6 +14,7 @@ pub struct ObjectIter<'a, R: Read> {
 }
 
 impl<'a, R: Read> ObjectIter<'a, R> {
+    /// Create a new iterator.
     pub fn new(file: &'a mut R, buf: &'a mut Vec<u8>) -> Self {
         Self {
             file,
@@ -77,6 +79,7 @@ impl Entry {
     }
 }
 
+/// Wraps a file containing an object stream.
 pub struct Store {
     file: File,
     map: HashMap<Hash, Entry>,
@@ -92,15 +95,18 @@ impl Store {
         }
     }
 
+    /// Consume instance, return underlying `file`.
     pub fn into_file(self) -> File {
         self.file
     }
 
+    /// Create a new CHAOS objett file.
     pub fn create(filename: &Path) -> io::Result<Self> {
         let file = create_for_append(filename)?;
         Ok(Self::new(file))
     }
 
+    /// Open an existing CHAOS object file.
     pub fn open(filename: &Path) -> io::Result<Self> {
         let file = open_for_append(filename)?;
         let mut store = Self::new(file);
@@ -108,6 +114,7 @@ impl Store {
         Ok(store)
     }
 
+    /// Verify entire file object by object, rebulding `HashMap`.
     pub fn reindex(&mut self) -> io::Result<()> {
         self.map.clear();
         self.offset = 0;
@@ -123,10 +130,12 @@ impl Store {
         Ok(())
     }
 
+    /// Determin if object with `hash` is present in this [Store].
     pub fn contains(&self, hash: &Hash) -> bool {
         self.map.contains_key(hash)
     }
 
+    /// Write object to file if not already present.
     pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
         if let Some(_entry) = self.map.get(obj.header().hash()) {
             Ok(false)
@@ -139,6 +148,7 @@ impl Store {
         }
     }
 
+    /// Load object into buffer, verifying on read.
     pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> io::Result<Object<'a>> {
         match self.map.get(hash) {
             Some(entry) => {

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code, unused_must_use, rustdoc::broken_intra_doc_links)]
-//#![warn(missing_docs)]
+#![warn(missing_docs)]
 #![cfg_attr(
     all(windows, feature = "nightly"),
     feature(seek_read_exact_seek_write_all)

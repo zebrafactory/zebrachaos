@@ -1,6 +1,9 @@
+//! Test helpers.
+
 use crate::{DIGEST, HASH_RANGE, HEADER, Hash, INFO_RANGE};
 use getrandom;
 
+/// Create a random, valid object.
 pub fn random_object(buf: &mut Vec<u8>, small: bool) -> Hash {
     // Generate random 4 byte info (all are valid)
     let mut info = [0; 4];
@@ -27,6 +30,10 @@ pub fn random_object(buf: &mut Vec<u8>, small: bool) -> Hash {
     hash
 }
 
+/// Create a random hash using `getrandom`.
+///
+/// Note it will be impossible to find any object info + data combination
+/// that matches this hash.
 pub fn random_hash() -> Hash {
     let mut buf = [0; DIGEST];
     getrandom::fill(&mut buf).unwrap();

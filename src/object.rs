@@ -69,7 +69,7 @@ impl ObjectHeader {
     /// Valadite object data against this header.
     ///
     /// If you need access to this `ObjectHeader` instance  and `buf` after this method succeeds,
-    /// use [Object::header()] and [Object::data()].
+    /// use [Object::header()] and [Object::as_buf()].
     pub fn validate_object<'a>(self, buf: &'a [u8]) -> Result<Object<'a>, ObjectError> {
         if self.full_size() != buf.len() {
             Err(ObjectError::BufLen)
@@ -152,28 +152,46 @@ pub struct Object<'a> {
 }
 
 impl<'a> Object<'a> {
+    /// Validate object in `buf`.
     pub fn validate(buf: &'a [u8]) -> Result<Self, ObjectError> {
         let header = ObjectHeader::read_from_buf(buf)?;
         header.validate_object(buf)
     }
 
+    /// Consume instance and return header.
     pub fn into_header(self) -> ObjectHeader {
         self.header
     }
 
+    /// Reference to the [ObjectHeader].
     pub fn header(&self) -> &ObjectHeader {
         &self.header
     }
 
+    /// Reference to the entire buffer (hash, size, kind, and data).
     pub fn as_buf(&self) -> &[u8] {
         self.buf
     }
 
+    /// Referece to the data portion of this object.
     pub fn as_data(&self) -> &[u8] {
         &self.buf[HEADER..]
     }
 }
 
+/// Set kind, size, and hash.
+///
+/// # Examples
+///
+/// ```
+/// use zf_zebrachaos::{HEADER, finalize_object};
+///
+/// let mut buf = vec![0; HEADER + 1];
+/// let obj = finalize_object(42, &mut buf).unwrap();
+/// assert_eq!(obj.header().size(), 1);
+/// assert_eq!(obj.header().kind(), 42);
+/// assert_eq!(obj.as_data(), &[0]);
+/// ```
 pub fn finalize_object<'a>(kind: u8, buf: &'a mut [u8]) -> Result<Object<'a>, ObjectError> {
     if !(BUFFER_MIN_SIZE..=BUFFER_MAX_SIZE).contains(&buf.len()) {
         Err(ObjectError::BufLenBounds)
