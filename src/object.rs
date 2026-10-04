@@ -74,6 +74,23 @@ impl ObjectHeader {
         if self.full_size() != buf.len() {
             Err(ObjectError::BufLen)
         } else if self.hash != Hash::compute(&buf[DIGEST..]) {
+            Err(ObjectError::Content)
+        } else {
+            Ok(Object { header: self, buf })
+        }
+    }
+
+    /// Internally validate object and then check that hash matches an expected external hash.
+    pub fn validate_object_with_expected_hash<'a>(
+        self,
+        buf: &'a [u8],
+        hash: &Hash,
+    ) -> Result<Object<'a>, ObjectError> {
+        if self.full_size() != buf.len() {
+            Err(ObjectError::BufLen)
+        } else if self.hash != Hash::compute(&buf[DIGEST..]) {
+            Err(ObjectError::Content)
+        } else if &self.hash != hash {
             Err(ObjectError::Hash)
         } else {
             Ok(Object { header: self, buf })
@@ -205,7 +222,7 @@ pub fn finalize_object<'a>(kind: u8, buf: &'a mut [u8]) -> Result<Object<'a>, Ob
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testhelpers::random_hash;
+    use crate::testhelpers::{HashBitFlipper, flip_bit, random_hash, random_object};
     use getrandom;
     use std::collections::HashSet;
 
@@ -278,13 +295,42 @@ mod tests {
         buf.extend_from_slice(data);
         let obj = header.validate_object(&mut buf).unwrap();
         assert_eq!(obj.as_data(), data);
-
         let header = obj.into_header();
         buf.extend_from_slice(b"b");
         assert_eq!(
             header.validate_object(&mut buf).unwrap_err(),
             ObjectError::BufLen
         );
+    }
+
+    #[test]
+    fn test_objectheader_validate_object_bitflip() {
+        let mut buf: Vec<u8> = Vec::new();
+        random_object(&mut buf, true);
+        for index in 0..buf.len() * 8 {
+            flip_bit(&mut buf, index);
+            let header = ObjectHeader::read_from_buf(&buf).unwrap();
+            assert!(header.validate_object(&buf).is_err());
+            flip_bit(&mut buf, index);
+            let header = ObjectHeader::read_from_buf(&buf).unwrap();
+            assert!(header.validate_object(&buf).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_objectheader_validate_object_with_expected_hash() {
+        let mut buf: Vec<u8> = Vec::new();
+        random_object(&mut buf, true);
+        let orig = ObjectHeader::read_from_buf(&buf).unwrap();
+        for bad in HashBitFlipper::new(orig.hash()) {
+            let header = orig.clone();
+            assert_eq!(
+                header
+                    .validate_object_with_expected_hash(&buf, &bad)
+                    .unwrap_err(),
+                ObjectError::Hash
+            );
+        }
     }
 
     #[test]

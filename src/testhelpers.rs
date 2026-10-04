@@ -39,3 +39,42 @@ pub fn random_hash() -> Hash {
     getrandom::fill(&mut buf).unwrap();
     Hash::from_bytes(buf)
 }
+
+/// Flip bit in a mutable buffer.
+pub fn flip_bit(buf: &mut [u8], index: usize) {
+    let i = index / 8;
+    let b = (index % 8) as u8;
+    buf[i] ^= 1 << b; // Flip bit `b` in byte `i`
+}
+
+/// Iteration through all 1-bit flip permutations in a hash.
+#[derive(Debug)]
+pub struct HashBitFlipper {
+    orig: Hash,
+    counter: usize,
+}
+
+impl HashBitFlipper {
+    /// Create a new [HashBitFlipper].
+    pub fn new(orig: &Hash) -> Self {
+        Self {
+            orig: *orig,
+            counter: 0,
+        }
+    }
+}
+
+impl Iterator for HashBitFlipper {
+    type Item = Hash;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.counter < self.orig.as_bytes().len() * 8 {
+            let mut bad = *self.orig.as_bytes();
+            flip_bit(&mut bad, self.counter);
+            self.counter += 1;
+            Some(Hash::from_bytes(bad))
+        } else {
+            None
+        }
+    }
+}
