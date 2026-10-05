@@ -38,7 +38,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                 Ok(HEADER) => {
                     // All headers are valid as long as they are the correct length, so just .unwrap()
                     let header = ObjectHeader::read_from_buf(self.buf).unwrap();
-                    self.buf.resize(HEADER + header.size(), 0);
+                    self.buf.resize(header.buf_len(), 0);
                     match self.file.read_exact(&mut self.buf[HEADER..]) {
                         Ok(_) => {
                             // But that doesn't mean we have the correct corresponding object data
@@ -124,7 +124,7 @@ impl Store {
         for result in ObjectIter::new(&mut file, &mut buf) {
             let header = result?;
             let entry = Entry::new(header.info(), self.offset);
-            self.offset += (HEADER + header.size()) as u64;
+            self.offset += (HEADER + header.data_len()) as u64;
             self.map.insert(header.into_hash(), entry);
         }
         Ok(())
@@ -143,7 +143,7 @@ impl Store {
             self.file.write_all(obj.as_buf())?;
             let entry = Entry::new(obj.header().info(), self.offset);
             self.map.insert(*obj.header().hash(), entry);
-            self.offset += obj.header().full_size() as u64;
+            self.offset += obj.header().buf_len() as u64;
             Ok(true)
         }
     }
@@ -153,7 +153,7 @@ impl Store {
         match self.map.get(hash) {
             Some(entry) => {
                 let header = ObjectHeader::new(*hash, entry.info);
-                buf.resize(header.full_size(), 0);
+                buf.resize(header.buf_len(), 0);
                 match read_exact_at(&self.file, buf, entry.offset) {
                     Ok(_) => match header.validate_object(buf) {
                         Ok(obj) => Some(Ok(obj)),
@@ -171,7 +171,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::testhelpers::random_object;
-    use crate::{BUFFER_MAX_SIZE, DIGEST, Hash, OBJECT_MAX_SIZE};
+    use crate::{BUF_MAX_LEN, DATA_MAX_LEN, DIGEST, Hash};
     use getrandom;
     use tempfile;
 
@@ -294,7 +294,7 @@ mod tests {
             let header = iter.next().unwrap().unwrap();
             assert!(!iter.is_closed);
             assert_eq!(header.hash(), &hash);
-            assert_eq!(header.size(), 1);
+            assert_eq!(header.data_len(), 1);
             assert_eq!(header.kind(), 0);
             assert!(iter.next().is_none());
             assert!(iter.is_closed);
@@ -304,9 +304,9 @@ mod tests {
 
     #[test]
     fn test_object_iter_case_6() {
-        // One valid OBJECT_MAX_SIZE byte object
+        // One valid DATA_MAX_LEN byte object
         let mut file = tempfile::tempfile().unwrap();
-        let mut buf = vec![255; HEADER + OBJECT_MAX_SIZE];
+        let mut buf = vec![255; HEADER + DATA_MAX_LEN];
         let hash = Hash::compute(&buf[DIGEST..]);
         buf[..DIGEST].copy_from_slice(hash.as_bytes());
         file.write_all(&buf).unwrap();
@@ -317,7 +317,7 @@ mod tests {
             let header = iter.next().unwrap().unwrap();
             assert!(!iter.is_closed);
             assert_eq!(header.hash(), &hash);
-            assert_eq!(header.size(), OBJECT_MAX_SIZE);
+            assert_eq!(header.data_len(), DATA_MAX_LEN);
             assert_eq!(header.kind(), 255);
             assert!(iter.next().is_none());
             assert!(iter.is_closed);
@@ -327,7 +327,7 @@ mod tests {
 
     fn object_iter_test_helper(count: usize, small: bool) {
         let mut file = tempfile::tempfile().unwrap();
-        let mut buf = vec![0; HEADER + OBJECT_MAX_SIZE];
+        let mut buf = vec![0; HEADER + DATA_MAX_LEN];
 
         let mut total_size = 0_u64;
         let mut hashlist: Vec<Hash> = Vec::with_capacity(count);
@@ -461,7 +461,7 @@ mod tests {
         let filename = tmpdir.path().join("chaos.data");
         let count = 69;
         let mut hashlist = Vec::with_capacity(count);
-        let mut buf = Vec::with_capacity(BUFFER_MAX_SIZE);
+        let mut buf = Vec::with_capacity(BUF_MAX_LEN);
         {
             assert!(Store::open(&filename).is_err());
 
@@ -518,7 +518,7 @@ mod tests {
     fn test_store_save_load() {
         let file = tempfile::tempfile().unwrap();
         let mut store = Store::new(file);
-        let mut buf = Vec::with_capacity(BUFFER_MAX_SIZE);
+        let mut buf = Vec::with_capacity(BUF_MAX_LEN);
         let count = 32;
         let mut hashlist = Vec::with_capacity(count);
         for _ in 0..count {

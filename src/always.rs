@@ -15,14 +15,17 @@ pub const INFO: usize = 4;
 /// Size of object header (49 bytes).
 pub const HEADER: usize = DIGEST + INFO;
 
+/// Minimum object size is 1 byte.
+pub const DATA_MIN_LEN: usize = 1;
+
 /// Max size of an Object (2^24, 16777216 bytes)
-pub const OBJECT_MAX_SIZE: usize = 16777216;
+pub const DATA_MAX_LEN: usize = 16777216;
 
 /// Minimum size of a valid CHAOS framed buffer (header + data).
-pub const BUFFER_MIN_SIZE: usize = HEADER + 1;
+pub const BUF_MIN_LEN: usize = HEADER + DATA_MIN_LEN;
 
 /// Maximum size of a valid CHAOS framed buffer (header + data).
-pub const BUFFER_MAX_SIZE: usize = HEADER + OBJECT_MAX_SIZE;
+pub const BUF_MAX_LEN: usize = HEADER + DATA_MAX_LEN;
 
 /// Location of Hash within object buffer.
 pub const HASH_RANGE: Range<usize> = 0..DIGEST;

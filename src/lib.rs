@@ -20,8 +20,8 @@ mod store;
 pub mod testhelpers;
 
 pub use always::{
-    BUFFER_MAX_SIZE, BUFFER_MIN_SIZE, DIGEST, HASH_RANGE, HEADER, HEXDIGEST, INFO, INFO_RANGE,
-    OBJECT_MAX_SIZE, Z32DIGEST,
+    BUF_MAX_LEN, BUF_MIN_LEN, DATA_MAX_LEN, DATA_MIN_LEN, DIGEST, HASH_RANGE, HEADER, HEXDIGEST,
+    INFO, INFO_RANGE, Z32DIGEST,
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::Hash;

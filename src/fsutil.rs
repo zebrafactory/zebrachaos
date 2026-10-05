@@ -72,7 +72,7 @@ pub fn open_for_append(path: &Path) -> io::Result<File> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Hash, OBJECT_MAX_SIZE};
+    use crate::{DATA_MAX_LEN, Hash};
     use getrandom;
     use std::collections::HashMap;
     use std::io::Write;
@@ -106,29 +106,29 @@ mod tests {
     #[test]
     fn test_read_exact_at() {
         let mut file = tempfile::tempfile().unwrap();
-        let mut buf = vec![0; OBJECT_MAX_SIZE];
+        let mut buf = vec![0; DATA_MAX_LEN];
         let r = read_exact_at(&mut file, &mut buf, 0);
         assert!(r.is_err());
 
         getrandom::fill(&mut buf).unwrap();
         let hash = Hash::compute(&buf);
         let hash2 = Hash::compute(&buf[69..]);
-        let hash3 = Hash::compute(&buf[69..OBJECT_MAX_SIZE - 42]);
+        let hash3 = Hash::compute(&buf[69..DATA_MAX_LEN - 42]);
         file.write_all(&buf).unwrap();
         buf.clear();
-        buf.resize(OBJECT_MAX_SIZE, 0);
+        buf.resize(DATA_MAX_LEN, 0);
 
         read_exact_at(&mut file, &mut buf, 0).unwrap();
         assert_eq!(Hash::compute(&buf), hash);
 
         buf.clear();
-        buf.resize(OBJECT_MAX_SIZE - 69, 0);
+        buf.resize(DATA_MAX_LEN - 69, 0);
         assert!(read_exact_at(&mut file, &mut buf, 70).is_err());
         read_exact_at(&mut file, &mut buf, 69).unwrap();
         assert_eq!(Hash::compute(&buf), hash2);
 
         buf.clear();
-        buf.resize(OBJECT_MAX_SIZE - 69 - 42, 0);
+        buf.resize(DATA_MAX_LEN - 69 - 42, 0);
         read_exact_at(&mut file, &mut buf, 69).unwrap();
         assert_eq!(Hash::compute(&buf), hash3);
     }
