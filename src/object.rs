@@ -80,7 +80,10 @@ impl ObjectHeader {
         }
     }
 
-    /// Internally validate object and then check that hash matches an expected external hash.
+    /// Internally validate object and then check that hash matches an expected external value.
+    ///
+    /// If you need access to this `ObjectHeader` instance  and `buf` after this method succeeds,
+    /// use [Object::header()] and [Object::as_buf()].
     pub fn validate_object_with_expected_hash<'a>(
         self,
         buf: &'a [u8],
@@ -318,7 +321,32 @@ mod tests {
     }
 
     #[test]
-    fn test_objectheader_validate_object_with_expected_hash() {
+    fn test_objectheader_validate_object_with_expected_hash_case_0() {
+        // Flip bits in object buffer, but keep expected hash the same
+        let mut buf: Vec<u8> = Vec::new();
+        random_object(&mut buf, true);
+        let orig = ObjectHeader::read_from_buf(&buf).unwrap();
+        for index in 0..buf.len() * 8 {
+            flip_bit(&mut buf, index);
+            let header = ObjectHeader::read_from_buf(&buf).unwrap();
+            assert!(
+                header
+                    .validate_object_with_expected_hash(&buf, orig.hash())
+                    .is_err()
+            );
+            flip_bit(&mut buf, index);
+            let header = ObjectHeader::read_from_buf(&buf).unwrap();
+            assert!(
+                header
+                    .validate_object_with_expected_hash(&buf, orig.hash())
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_objectheader_validate_object_with_expected_hash_case_1() {
+        // Flip bits in expected hash, but keep object buffer the same
         let mut buf: Vec<u8> = Vec::new();
         random_object(&mut buf, true);
         let orig = ObjectHeader::read_from_buf(&buf).unwrap();

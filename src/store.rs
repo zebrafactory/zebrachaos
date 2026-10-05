@@ -137,7 +137,7 @@ impl Store {
 
     /// Write object to file if not already present.
     pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
-        if let Some(_entry) = self.map.get(obj.header().hash()) {
+        if self.contains(obj.header().hash()) {
             Ok(false)
         } else {
             self.file.write_all(obj.as_buf())?;
