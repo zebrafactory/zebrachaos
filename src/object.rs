@@ -242,13 +242,35 @@ impl<'a> MutObject<'a> {
         BUF_MAX_LEN - self.buf.len()
     }
 
-    /// Append to data portion of object.
+    /// Append *all* data to buffer if it fits, otherwise append *nothing*.
+    ///
+    /// If `data` is empty or if there is not room for *all* of `data` to be append to
+    /// the buffer, the buffer remainins unmodified and an [ObjectError::DataLenBounds]
+    /// `Err()` is returned.
     pub fn try_extend_from_slice(&mut self, data: &[u8]) -> Result<(), ObjectError> {
         if data.is_empty() || data.len() > self.remaining() {
             Err(ObjectError::DataLenBounds)
         } else {
             self.buf.extend_from_slice(data);
             Ok(())
+        }
+    }
+
+    /// Append as many bytes as possible, returning the number of bytes appended.
+    ///
+    /// This will never never extend the buffer past its allowed size.  It is not an error
+    /// for this method to append zero bytes when the buffer is already full, in which case
+    /// `Ok(0)` is returned.
+    ///
+    /// However, it is an error if `data` is empty, in which case an [ObjectError::DataLenBounds]
+    /// `Err()` is returned.
+    pub fn bound_extend_from_slice(&mut self, data: &[u8]) -> Result<usize, ObjectError> {
+        if data.is_empty() {
+            Err(ObjectError::DataLenBounds)
+        } else {
+            let n = std::cmp::min(data.len(), self.remaining());
+            self.buf.extend_from_slice(&data[..n]);
+            Ok(n)
         }
     }
 
@@ -554,6 +576,50 @@ mod tests {
         );
         assert_eq!(obj.buf, &vec![0; BUF_MAX_LEN]);
         assert_eq!(obj.remaining(), 0);
+    }
+
+    #[test]
+    fn test_mutobject_bound_extend_from_slice_case_0() {
+        // Test when data is empty on first call>
+        let mut buf = Vec::new();
+        let mut obj = MutObject::new(&mut buf);
+        assert_eq!(
+            obj.bound_extend_from_slice(&[]).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
+    }
+
+    #[test]
+    fn test_mutobject_bound_extend_from_slice_case_1() {
+        let mut buf = Vec::with_capacity(BUF_MAX_LEN);
+        let mut obj = MutObject::new(&mut buf);
+        let chain = random_hash();
+        let mut total = HEADER;
+        for _ in 0..DATA_MAX_LEN / DIGEST {
+            assert_eq!(
+                obj.bound_extend_from_slice(chain.as_bytes()).unwrap(),
+                DIGEST
+            );
+            total += DIGEST;
+            assert_eq!(obj.buf.len(), total);
+        }
+        assert_eq!(obj.remaining(), 1);
+        assert_eq!(obj.remaining(), DATA_MAX_LEN % DIGEST);
+        assert_eq!(obj.buf.len(), BUF_MAX_LEN - 1);
+
+        assert_eq!(obj.bound_extend_from_slice(chain.as_bytes()).unwrap(), 1);
+        assert_eq!(obj.remaining(), 0);
+        assert_eq!(obj.buf.len(), BUF_MAX_LEN - 0);
+
+        assert_eq!(obj.bound_extend_from_slice(chain.as_bytes()).unwrap(), 0);
+        assert_eq!(obj.remaining(), 0);
+        assert_eq!(obj.buf.len(), BUF_MAX_LEN - 0);
+
+        // But after all of this, should still be an error to append empty data
+        assert_eq!(
+            obj.bound_extend_from_slice(&[]).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
     }
 
     #[test]
