@@ -1,16 +1,8 @@
+use crate::always::*;
 use blake2::{Blake2b, Digest, digest::consts::U45};
 use subtle::{Choice, ConstantTimeEq};
 
 type Blake2b360 = Blake2b<U45>;
-
-/// Size of hash output digest (360 bits, 45 bytes).
-pub const DIGEST: usize = 45;
-
-/// Size of hex-encoded hash (90 bytes).
-pub const HEXDIGEST: usize = DIGEST * 2;
-
-/// Size of Zbase32-encoded hash (72 bytes).
-pub const Z32DIGEST: usize = DIGEST * 8 / 5;
 
 /// Error when trying to decode a Zbase32 encoded [Hash](crate::Hash).
 #[derive(Debug, PartialEq, Eq)]

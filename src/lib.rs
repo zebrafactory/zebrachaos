@@ -24,6 +24,6 @@ pub use always::{
     INFO, INFO_RANGE, Z32DIGEST,
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
-pub use hashing::Hash;
+pub use hashing::{Hash, HexError, Zbase32Error};
 pub use object::{MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
