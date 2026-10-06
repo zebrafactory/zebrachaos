@@ -222,6 +222,42 @@ pub fn finalize_object<'a>(kind: u8, buf: &'a mut [u8]) -> Result<Object<'a>, Ob
     }
 }
 
+/// Object buffer builder.
+#[derive(Debug)]
+pub struct MutObject<'a> {
+    buf: &'a mut Vec<u8>,
+}
+
+impl<'a> MutObject<'a> {
+    /// Initialize buffer for object construction.
+    pub fn new(buf: &'a mut Vec<u8>) -> Self {
+        buf.clear();
+        buf.resize(HEADER, 0);
+        Self { buf }
+    }
+
+    /// Bytes still available in buffer for object data.
+    pub fn remaining(&self) -> usize {
+        assert!((HEADER..=BUF_MAX_LEN).contains(&self.buf.len()));
+        BUF_MAX_LEN - self.buf.len()
+    }
+
+    /// Append to data portion of object.
+    pub fn try_extend_from_slice(&mut self, data: &[u8]) -> Result<(), ObjectError> {
+        if data.is_empty() || data.len() > self.remaining() {
+            Err(ObjectError::DataLenBounds)
+        } else {
+            self.buf.extend_from_slice(data);
+            Ok(())
+        }
+    }
+
+    /// Finalize buffer: set size and kind, compute hash, set hash.
+    pub fn finalize(self, kind: u8) -> Result<Object<'a>, ObjectError> {
+        finalize_object(kind, self.buf)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,5 +507,68 @@ mod tests {
             );
         }
         assert_eq!(set.len(), 512);
+    }
+
+    #[test]
+    fn test_mutobject_new() {
+        let mut buf = vec![42; HEADER + 1];
+        let obj = MutObject::new(&mut buf);
+        assert_eq!(obj.buf, &[0; HEADER]);
+
+        let mut buf = Vec::new();
+        let obj = MutObject::new(&mut buf);
+        assert_eq!(obj.buf, &[0; HEADER]);
+    }
+
+    #[test]
+    fn test_mutobject_try_extend_from_slice_and_remainng() {
+        let mut buf = Vec::with_capacity(BUF_MAX_LEN);
+        let mut obj = MutObject::new(&mut buf);
+
+        // Append empty data (should Err).
+        let mut data = Vec::with_capacity(DATA_MAX_LEN);
+        assert_eq!(
+            obj.try_extend_from_slice(&data).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
+        assert_eq!(obj.remaining(), DATA_MAX_LEN);
+
+        // Append 1 byte
+        data.resize(1, 0);
+        assert!(obj.try_extend_from_slice(&data).is_ok());
+        assert_eq!(obj.buf, &[0; HEADER + 1]);
+        assert_eq!(obj.remaining(), DATA_MAX_LEN - 1);
+
+        // Append remaining possible bytes
+        data.resize(DATA_MAX_LEN - 1, 0);
+        assert!(obj.try_extend_from_slice(&data).is_ok());
+        assert_eq!(obj.buf, &vec![0; BUF_MAX_LEN]);
+        assert_eq!(obj.remaining(), 0);
+
+        // Try appending more, should not work
+        data.resize(1, 0);
+        assert_eq!(data.len(), 1);
+        assert_eq!(
+            obj.try_extend_from_slice(&data).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
+        assert_eq!(obj.buf, &vec![0; BUF_MAX_LEN]);
+        assert_eq!(obj.remaining(), 0);
+    }
+
+    #[test]
+    fn test_mutobject_finalize() {
+        let mut buf = Vec::new();
+        let obj = MutObject::new(&mut buf);
+        assert_eq!(obj.buf.len(), HEADER);
+        assert_eq!(obj.finalize(69).unwrap_err(), ObjectError::BufLenBounds);
+
+        let mut buf = Vec::new();
+        let obj = MutObject::new(&mut buf);
+        obj.buf.extend_from_slice(&[42]);
+        let obj = obj.finalize(69).unwrap();
+        assert_eq!(obj.header().data_len(), 1);
+        assert_eq!(obj.header().kind(), 69);
+        assert_eq!(obj.as_data(), &[42]);
     }
 }

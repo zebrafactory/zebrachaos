@@ -25,5 +25,5 @@ pub use always::{
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::Hash;
-pub use object::{Object, ObjectError, ObjectHeader, finalize_object};
+pub use object::{MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
