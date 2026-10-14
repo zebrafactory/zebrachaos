@@ -53,7 +53,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                         Err(err) => Some(Err(err)),
                     }
                 }
-                Ok(_n) => Some(Err(io::Error::new(
+                Ok(_) => Some(Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "could not read full header",
                 ))),
@@ -64,6 +64,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
 }
 
 /// A value in the [Index] map.
+#[derive(Clone, Copy)]
 pub struct Entry {
     /// The 4 byte object info (3 byte size + 1 byte kind).
     pub info: u32,
@@ -76,6 +77,16 @@ impl Entry {
     /// Construct an [Entry].
     pub fn new(info: u32, offset: u64) -> Self {
         Self { info, offset }
+    }
+
+    /// Size of object data in bytes (extracted from info field).
+    pub fn data_len(&self) -> usize {
+        ((self.info & 0x00ffffff) + 1) as usize
+    }
+
+    /// Size of full object buffer (header + data).
+    pub fn buf_len(&self) -> usize {
+        HEADER + self.data_len()
     }
 }
 
@@ -152,13 +163,13 @@ impl Store {
     pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> Option<io::Result<Object<'a>>> {
         match self.map.get(hash) {
             Some(entry) => {
-                let header = ObjectHeader::new(*hash, entry.info);
-                buf.resize(header.buf_len(), 0);
+                buf.resize(entry.buf_len(), 0);
                 match read_exact_at(&self.file, buf, entry.offset) {
-                    Ok(_) => match header.validate_object(buf) {
+                    Ok(_) => match Object::validate_with_expected_hash(buf, hash) {
                         Ok(obj) => Some(Ok(obj)),
                         Err(_obj_err) => Some(Err(io::Error::other("hash no match"))),
                     },
+
                     Err(err) => Some(Err(err)),
                 }
             }
@@ -170,7 +181,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testhelpers::random_object;
+    use crate::testhelpers::{HashBitFlipper, random_object};
     use crate::{BUF_MAX_LEN, DATA_MAX_LEN, DIGEST, Hash};
     use getrandom;
     use tempfile;
@@ -563,6 +574,29 @@ mod tests {
         for hash in store.map.keys() {
             let obj = store.load(hash, &mut buf).unwrap().unwrap();
             assert_eq!(hash, &Hash::compute(&obj.as_buf()[DIGEST..]));
+        }
+    }
+
+    #[test]
+    fn test_store_load_hash_check() {
+        let tmpdir = tempfile::TempDir::new().unwrap();
+        let filename = tmpdir.path().join("chaos.data");
+        let mut store = Store::create(&filename).unwrap();
+        let mut buf = Vec::new();
+        let hash = random_object(&mut buf, true);
+        {
+            let obj = Object::validate_with_expected_hash(&buf, &hash).unwrap();
+            store.save(&obj).unwrap();
+        }
+        store.load(&hash, &mut buf).unwrap().unwrap();
+        let entry = *store.map.get(&hash).unwrap();
+        for bad_hash in HashBitFlipper::new(&hash) {
+            store.map.clear();
+            store.map.insert(bad_hash.clone(), entry.clone());
+            assert_eq!(
+                store.load(&bad_hash, &mut buf).unwrap().unwrap_err().kind(),
+                io::ErrorKind::Other
+            );
         }
     }
 }

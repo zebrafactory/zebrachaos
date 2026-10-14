@@ -178,6 +178,12 @@ impl<'a> Object<'a> {
         header.validate_object(buf)
     }
 
+    /// Internally validate object in `buf` and unsure its hash in-buffer matches `hash`.
+    pub fn validate_with_expected_hash(buf: &'a [u8], hash: &Hash) -> Result<Self, ObjectError> {
+        let header = ObjectHeader::read_from_buf(buf)?;
+        header.validate_object_with_expected_hash(buf, hash)
+    }
+
     /// Consume instance and return header.
     pub fn into_header(self) -> ObjectHeader {
         self.header
