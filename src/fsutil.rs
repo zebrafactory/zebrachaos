@@ -39,7 +39,6 @@ pub fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Re
                 buf = &mut buf[n..];
                 offset += n as u64;
             }
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(e) => {
                 return Err(e);
             }
