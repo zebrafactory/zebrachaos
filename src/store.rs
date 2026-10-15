@@ -47,7 +47,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                                     self.is_closed = false;
                                     Some(Ok(header))
                                 }
-                                Err(_) => Some(Err(io::Error::other("hash no matchy matchy"))),
+                                Err(obj_err) => Some(Err(obj_err.into_io_error())),
                             }
                         }
                         Err(err) => Some(Err(err)),
@@ -167,7 +167,7 @@ impl Store {
                 match read_exact_at(&self.file, buf, entry.offset) {
                     Ok(_) => match Object::validate_with_expected_hash(buf, hash) {
                         Ok(obj) => Some(Ok(obj)),
-                        Err(obj_err) => Some(Err(io::Error::other(obj_err))),
+                        Err(obj_err) => Some(Err(obj_err.into_io_error())),
                     },
                     Err(err) => Some(Err(err)),
                 }
@@ -461,7 +461,6 @@ mod tests {
         let filename = tmpdir.path().join("chaos.data");
         let store = Store::create(&filename).unwrap();
         assert!(store.map.is_empty());
-
         assert!(Store::create(&filename).is_err());
     }
 
@@ -474,17 +473,14 @@ mod tests {
         let mut buf = Vec::with_capacity(BUF_MAX_LEN);
         {
             assert!(Store::open(&filename).is_err());
-
             create_for_append(&filename).unwrap();
             let mut store = Store::open(&filename).unwrap();
             assert!(store.map.is_empty());
-
             for _ in 0..count {
                 let hash = random_object(&mut buf, false);
                 let obj = Object::validate(&buf).unwrap();
                 assert_eq!(obj.header().hash(), &hash);
                 store.save(&obj).unwrap();
-
                 hashlist.push(hash);
             }
         }

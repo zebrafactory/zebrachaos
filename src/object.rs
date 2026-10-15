@@ -1,5 +1,6 @@
 use crate::Hash;
 use crate::always::*;
+use std::io;
 
 /// Error returned when building and validating objects.
 #[derive(Debug, PartialEq)]
@@ -24,6 +25,13 @@ pub enum ObjectError {
 
     /// Hash computed over object info and data does not match expected hash.
     Hash,
+}
+
+impl ObjectError {
+    /// Consume error, embedding it in an `io::Error`.
+    pub fn into_io_error(self) -> io::Error {
+        io::Error::other(self)
+    }
 }
 
 impl core::fmt::Display for ObjectError {
