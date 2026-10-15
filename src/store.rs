@@ -135,7 +135,7 @@ impl Store {
         for result in ObjectIter::new(&mut file, &mut buf) {
             let header = result?;
             let entry = Entry::new(header.info(), self.offset);
-            self.offset += (HEADER + header.data_len()) as u64;
+            self.offset += header.buf_len() as u64;
             self.map.insert(header.into_hash(), entry);
         }
         Ok(())
@@ -279,8 +279,14 @@ mod tests {
             let mut iter = ObjectIter::new(&mut file, &mut buf);
             assert!(!iter.is_closed);
             assert_eq!(
-                iter.next().unwrap().unwrap_err().kind(),
-                io::ErrorKind::Other
+                iter.next()
+                    .unwrap()
+                    .unwrap_err()
+                    .into_inner()
+                    .unwrap()
+                    .downcast()
+                    .unwrap(),
+                Box::new(ObjectError::Content)
             );
             assert!(iter.is_closed);
         }
@@ -434,8 +440,14 @@ mod tests {
             }
             assert!(!iter.is_closed);
             assert_eq!(
-                iter.next().unwrap().unwrap_err().kind(),
-                io::ErrorKind::Other
+                iter.next()
+                    .unwrap()
+                    .unwrap_err()
+                    .into_inner()
+                    .unwrap()
+                    .downcast()
+                    .unwrap(),
+                Box::new(ObjectError::Content)
             );
             assert!(iter.is_closed);
             assert!(iter.next().is_none());

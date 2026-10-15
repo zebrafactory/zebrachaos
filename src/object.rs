@@ -121,7 +121,7 @@ impl ObjectHeader {
         if self.data_len() != data.len() {
             Err(ObjectError::DataLen)
         } else if self.hash != Hash::compute_with_info(self.info, data) {
-            Err(ObjectError::Hash)
+            Err(ObjectError::Content)
         } else {
             Ok(self)
         }
@@ -266,7 +266,7 @@ impl<'a> MutObject<'a> {
 
     /// Append *all* data to buffer if it fits, otherwise append *nothing*.
     ///
-    /// If `data` is empty or if there is not room for *all* of `data` to be append to
+    /// If `data` is empty or if there is not room for *all* of `data` to be appended to
     /// the buffer, the buffer remainins unmodified and an [ObjectError::DataLenBounds]
     /// `Err()` is returned.
     pub fn try_extend_from_slice(&mut self, data: &[u8]) -> Result<(), ObjectError> {
