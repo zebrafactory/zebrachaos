@@ -26,6 +26,14 @@ pub enum ObjectError {
     Hash,
 }
 
+impl core::fmt::Display for ObjectError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str(&format!("ObjectError::{self:?}"))
+    }
+}
+
+impl std::error::Error for ObjectError {}
+
 /// The CHOAS framing header (hash, size, kind).
 ///
 /// # Examples
@@ -292,6 +300,12 @@ mod tests {
     use crate::testhelpers::{HashBitFlipper, flip_bit, random_hash, random_object};
     use getrandom;
     use std::collections::HashSet;
+
+    #[test]
+    fn test_objecterror_display_fmt() {
+        let err = ObjectError::Content;
+        assert_eq!(format!("{err}"), "ObjectError::Content");
+    }
 
     #[test]
     fn test_objectheader_build() {

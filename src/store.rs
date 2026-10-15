@@ -167,9 +167,8 @@ impl Store {
                 match read_exact_at(&self.file, buf, entry.offset) {
                     Ok(_) => match Object::validate_with_expected_hash(buf, hash) {
                         Ok(obj) => Some(Ok(obj)),
-                        Err(_obj_err) => Some(Err(io::Error::other("hash no match"))),
+                        Err(obj_err) => Some(Err(io::Error::other(obj_err))),
                     },
-
                     Err(err) => Some(Err(err)),
                 }
             }
@@ -182,7 +181,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::testhelpers::{HashBitFlipper, random_object};
-    use crate::{BUF_MAX_LEN, DATA_MAX_LEN, DIGEST, Hash};
+    use crate::{BUF_MAX_LEN, DATA_MAX_LEN, DIGEST, Hash, ObjectError};
     use getrandom;
     use tempfile;
 
@@ -594,8 +593,15 @@ mod tests {
             store.map.clear();
             store.map.insert(bad_hash.clone(), entry.clone());
             assert_eq!(
-                store.load(&bad_hash, &mut buf).unwrap().unwrap_err().kind(),
-                io::ErrorKind::Other
+                store
+                    .load(&bad_hash, &mut buf)
+                    .unwrap()
+                    .unwrap_err()
+                    .into_inner()
+                    .unwrap()
+                    .downcast()
+                    .unwrap(),
+                Box::new(ObjectError::Hash)
             );
         }
     }
