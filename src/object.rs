@@ -42,6 +42,44 @@ impl core::fmt::Display for ObjectError {
 
 impl std::error::Error for ObjectError {}
 
+/// Object size and kind.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Info {
+    pub value: u32,
+}
+
+impl Info {
+    /// New
+    pub fn new(value: u32) -> Self {
+        Self { value }
+    }
+
+    /// Build info.
+    pub fn build(size: usize, kind: u8) -> Result<Self, ObjectError> {
+        if !(1..=DATA_MAX_LEN).contains(&size) {
+            Err(ObjectError::DataLenBounds)
+        } else {
+            let value = (size - 1) as u32 | (kind as u32) << 24;
+            Ok(Self { value })
+        }
+    }
+
+    /// Size of object data in bytes (extracted from info field).
+    pub fn data_len(&self) -> usize {
+        ((self.value & 0x00ffffff) + 1) as usize
+    }
+
+    /// Size of full object buffer (header + data).
+    pub fn buf_len(&self) -> usize {
+        HEADER + self.data_len()
+    }
+
+    /// Object kind (extracted from info field).
+    pub fn kind(&self) -> u8 {
+        (self.value >> 24) as u8
+    }
+}
+
 /// The CHOAS framing header (hash, size, kind).
 ///
 /// # Examples
@@ -62,24 +100,20 @@ impl std::error::Error for ObjectError {}
 #[derive(Debug, PartialEq, Clone)]
 pub struct ObjectHeader {
     hash: Hash,
-    info: u32,
+    info: Info,
 }
 
 impl ObjectHeader {
     /// New instance.
-    pub fn new(hash: Hash, info: u32) -> Self {
+    pub fn new(hash: Hash, info: Info) -> Self {
         Self { hash, info }
     }
 
     /// Compute hash and info corresponding to `kind` and `data`.
     pub fn build(kind: u8, data: &[u8]) -> Result<Self, ObjectError> {
-        if !(1..=DATA_MAX_LEN).contains(&data.len()) {
-            Err(ObjectError::DataLenBounds)
-        } else {
-            let info = (data.len() - 1) as u32 | (kind as u32) << 24;
-            let hash = Hash::compute_with_info(info, data);
-            Ok(Self { hash, info })
-        }
+        let info = Info::build(data.len(), kind)?;
+        let hash = Hash::compute_with_info(info.value, data);
+        Ok(Self { hash, info })
     }
 
     /// Valadite object data against this header.
@@ -120,7 +154,7 @@ impl ObjectHeader {
     pub fn verify(self, data: &[u8]) -> Result<ObjectHeader, ObjectError> {
         if self.data_len() != data.len() {
             Err(ObjectError::DataLen)
-        } else if self.hash != Hash::compute_with_info(self.info, data) {
+        } else if self.hash != Hash::compute_with_info(self.info.value, data) {
             Err(ObjectError::Content)
         } else {
             Ok(self)
@@ -133,23 +167,23 @@ impl ObjectHeader {
     }
 
     /// Info bytes (size + kind)
-    pub fn info(&self) -> u32 {
+    pub fn info(&self) -> Info {
         self.info
     }
 
     /// Size of object data in bytes (extracted from info field).
     pub fn data_len(&self) -> usize {
-        ((self.info & 0x00ffffff) + 1) as usize
+        self.info.data_len()
     }
 
     /// Size of full object buffer (header + data).
     pub fn buf_len(&self) -> usize {
-        HEADER + self.data_len()
+        self.info.buf_len()
     }
 
     /// Object kind (extracted from info field).
     pub fn kind(&self) -> u8 {
-        (self.info >> 24) as u8
+        self.info.kind()
     }
 
     /// Consume instance, returning hash.
@@ -164,7 +198,10 @@ impl ObjectHeader {
         } else {
             let hash = Hash::from_slice(&buf[HASH_RANGE]).unwrap();
             let info = u32::from_le_bytes(buf[INFO_RANGE].try_into().unwrap());
-            Ok(Self { hash, info })
+            Ok(Self {
+                hash,
+                info: Info::new(info),
+            })
         }
     }
 
@@ -174,7 +211,7 @@ impl ObjectHeader {
             Err(ObjectError::HeaderLen)
         } else {
             buf[HASH_RANGE].copy_from_slice(self.hash.as_bytes());
-            buf[INFO_RANGE].copy_from_slice(&self.info.to_le_bytes());
+            buf[INFO_RANGE].copy_from_slice(&self.info.value.to_le_bytes());
             Ok(())
         }
     }
@@ -313,6 +350,44 @@ mod tests {
     fn test_objecterror_display_fmt() {
         let err = ObjectError::Content;
         assert_eq!(format!("{err}"), "ObjectError::Content");
+    }
+
+    #[test]
+    fn test_info() {
+        assert_eq!(Info::build(0, 0).unwrap_err(), ObjectError::DataLenBounds);
+        assert_eq!(Info::build(0, 255).unwrap_err(), ObjectError::DataLenBounds);
+        assert_eq!(
+            Info::build(DATA_MAX_LEN + 1, 0).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
+        assert_eq!(
+            Info::build(DATA_MAX_LEN + 1, 255).unwrap_err(),
+            ObjectError::DataLenBounds
+        );
+
+        let info = Info::build(1, 0).unwrap();
+        assert_eq!(info.value, 0);
+        assert_eq!(info.data_len(), 1);
+        assert_eq!(info.buf_len(), 1 + HEADER);
+        assert_eq!(info.kind(), 0);
+
+        let info = Info::build(1, 255).unwrap();
+        assert_eq!(info.value, 255 << 24);
+        assert_eq!(info.data_len(), 1);
+        assert_eq!(info.buf_len(), 1 + HEADER);
+        assert_eq!(info.kind(), 255);
+
+        let info = Info::build(DATA_MAX_LEN, 0).unwrap();
+        assert_eq!(info.value, (DATA_MAX_LEN - 1) as u32);
+        assert_eq!(info.data_len(), DATA_MAX_LEN);
+        assert_eq!(info.buf_len(), DATA_MAX_LEN + HEADER);
+        assert_eq!(info.kind(), 0);
+
+        let info = Info::build(DATA_MAX_LEN, 255).unwrap();
+        assert_eq!(info.value, (DATA_MAX_LEN - 1) as u32 | 255 << 24);
+        assert_eq!(info.data_len(), DATA_MAX_LEN);
+        assert_eq!(info.buf_len(), DATA_MAX_LEN + HEADER);
+        assert_eq!(info.kind(), 255);
     }
 
     #[test]
@@ -484,7 +559,7 @@ mod tests {
     #[test]
     fn test_objectheader_write_to_buf() {
         let hash = random_hash();
-        let info = 69;
+        let info = Info::new(69);
         let header = ObjectHeader::new(hash.clone(), info);
         assert_eq!(header.data_len(), 70);
         assert_eq!(header.kind(), 0);

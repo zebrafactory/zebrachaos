@@ -1,5 +1,5 @@
 use crate::{
-    HEADER, Hash, Object, ObjectHeader, create_for_append, open_for_append, read_exact_at,
+    HEADER, Hash, Info, Object, ObjectHeader, create_for_append, open_for_append, read_exact_at,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -67,7 +67,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
 #[derive(Clone, Copy)]
 pub struct Entry {
     /// The 4 byte object info (3 byte size + 1 byte kind).
-    pub info: u32,
+    pub info: Info,
 
     /// File offset at which the object header starts.
     pub offset: u64,
@@ -75,18 +75,8 @@ pub struct Entry {
 
 impl Entry {
     /// Construct an [Entry].
-    pub fn new(info: u32, offset: u64) -> Self {
+    pub fn new(info: Info, offset: u64) -> Self {
         Self { info, offset }
-    }
-
-    /// Size of object data in bytes (extracted from info field).
-    pub fn data_len(&self) -> usize {
-        ((self.info & 0x00ffffff) + 1) as usize
-    }
-
-    /// Size of full object buffer (header + data).
-    pub fn buf_len(&self) -> usize {
-        HEADER + self.data_len()
     }
 }
 
@@ -163,7 +153,7 @@ impl Store {
     pub fn load<'a>(&self, hash: &Hash, buf: &'a mut Vec<u8>) -> Option<io::Result<Object<'a>>> {
         match self.map.get(hash) {
             Some(entry) => {
-                buf.resize(entry.buf_len(), 0);
+                buf.resize(entry.info.buf_len(), 0);
                 match read_exact_at(&self.file, buf, entry.offset) {
                     Ok(_) => match Object::validate_with_expected_hash(buf, hash) {
                         Ok(obj) => Some(Ok(obj)),
