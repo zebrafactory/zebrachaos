@@ -8,7 +8,7 @@ pub enum ObjectError {
     /// Length of full buffer does not match expected value.
     BufLen,
 
-    /// Buffer length outside `(HEADER + 1..HEADER + DATA_MAX_LEN)`
+    /// Buffer length is outside of range `(BUF_MIN_LEN..=BUF_MAX_LEN)`.
     BufLenBounds,
 
     /// Bytes needed for header are not available in buffer.
@@ -20,10 +20,10 @@ pub enum ObjectError {
     /// Length of object data is zero or greater than `DATA_MAX_LEN`.
     DataLenBounds,
 
-    /// Content hash does not match hash in framing buffer.
+    /// Computed content hash does not match hash in framing header.
     Content,
 
-    /// Hash computed over object info and data does not match expected hash.
+    /// Hash in framing header does not match hash in index.
     Hash,
 }
 
@@ -336,6 +336,8 @@ impl<'a> MutObject<'a> {
 
     /// Finalize buffer: set size and kind, compute hash, set hash.
     pub fn finalize(self, kind: u8) -> Result<Object<'a>, ObjectError> {
+        // FIXME: This should not error because we keep buffer size in check with above 2 methods.
+        // This should probably be unwrapped.
         finalize_object(kind, self.buf)
     }
 }

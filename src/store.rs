@@ -7,6 +7,18 @@ use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::Path;
 
 /// Iterated through an object stream in anything implementing the Read trait.
+///
+/// # Examples
+///
+/// ```
+/// use tempfile;
+/// use zf_zebrachaos::ObjectIter;
+///
+/// let mut file = tempfile::tempfile().unwrap();
+/// let mut buf = Vec::new();
+/// let mut iter = ObjectIter::new(&mut file, &mut buf);
+/// assert!(iter.next().is_none());
+/// ```
 pub struct ObjectIter<'a, R: Read> {
     file: &'a mut R,
     buf: &'a mut Vec<u8>,
@@ -80,7 +92,26 @@ impl Entry {
     }
 }
 
-/// Wraps a file containing an object stream.
+/// Wraps a file containing an object
+///
+/// # Examples
+///
+/// ```
+/// use tempfile;
+/// use zf_zebrachaos::{Store, MutObject};
+///
+/// let tmpdir = tempfile::TempDir::new().unwrap();
+/// let filename = tmpdir.path().join("chaos.data");
+/// let mut store = Store::create(&filename).unwrap();
+/// let mut buf = Vec::new();
+/// let mut obj = MutObject::new(&mut buf);
+/// obj.bound_extend_from_slice(b"hello, world");
+/// let obj = obj.finalize(42).unwrap();
+/// assert!(store.save(&obj).unwrap());
+///
+/// // If we save the same object again, we get Ok(false)
+/// assert!(!store.save(&obj).unwrap());
+/// ```
 pub struct Store {
     file: File,
     map: HashMap<Hash, Entry>,
@@ -101,7 +132,7 @@ impl Store {
         self.file
     }
 
-    /// Create a new CHAOS objett file.
+    /// Create a new CHAOS encoded file.
     pub fn create(filename: &Path) -> io::Result<Self> {
         let file = create_for_append(filename)?;
         Ok(Self::new(file))
