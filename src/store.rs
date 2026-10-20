@@ -110,10 +110,10 @@ impl Entry {
 ///    let mut obj = MutObject::new(&mut buf);
 ///    obj.bound_extend_from_slice(b"hello, world");
 ///    let obj = obj.finalize(42).unwrap();
-///    assert!(store.save(&obj).unwrap());
+///    assert!(store.save_unchecked(&obj).unwrap());
 ///
 ///    // If we save the same object again, we get Ok(false):
-///    assert!(!store.save(&obj).unwrap());
+///    assert!(!store.save_unchecked(&obj).unwrap());
 ///    *obj.header().hash()
 /// };
 ///
@@ -177,16 +177,43 @@ impl Store {
         self.map.contains_key(hash)
     }
 
-    /// Write object to file if not already present.
-    pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
-        if self.contains(obj.header().hash()) {
+    /// Write object to file if not already present, but do not double check existing object.
+    ///
+    /// If the object's hash is already in the internal `HashMap`, this method does nothing.
+    /// The updside is performance. The downside is this method does not double check that the
+    /// existing object is actually loadable and valid at the present moment.
+    pub fn save_unchecked(&mut self, obj: &Object) -> io::Result<bool> {
+        if self.map.contains_key(obj.header().hash()) {
             Ok(false)
         } else {
             self.file.write_all(obj.as_buf())?;
             let entry = Entry::new(obj.header().info(), self.offset);
             self.map.insert(*obj.header().hash(), entry);
-            self.offset += obj.header().buf_len() as u64;
+            self.offset += obj.as_buf().len() as u64;
             Ok(true)
+        }
+    }
+
+    /// Write object to file if not already present, verifying existing object for safety.
+    pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
+        match self.map.get(obj.header().hash()) {
+            Some(entry) => {
+                // Object is in index, but double check it is readble and valid at this present moment.
+                let mut buf = Vec::new();
+                buf.resize(entry.info.buf_len(), 0);
+                read_exact_at(&self.file, &mut buf, entry.offset)?;
+                match Object::validate_with_expected_hash(&buf, obj.header().hash()) {
+                    Ok(_) => Ok(false),
+                    Err(obj_err) => Err(obj_err.into_io_error()),
+                }
+            }
+            None => {
+                self.file.write_all(obj.as_buf())?;
+                let entry = Entry::new(obj.header().info(), self.offset);
+                self.map.insert(*obj.header().hash(), entry);
+                self.offset += obj.as_buf().len() as u64;
+                Ok(true)
+            }
         }
     }
 
@@ -523,7 +550,7 @@ mod tests {
                 let hash = random_object(&mut buf, false);
                 let obj = Object::validate(&buf).unwrap();
                 assert_eq!(obj.header().hash(), &hash);
-                store.save(&obj).unwrap();
+                store.save_unchecked(&obj).unwrap();
                 hashlist.push(hash);
             }
         }
@@ -575,8 +602,8 @@ mod tests {
             assert!(!store.contains(&hash));
             {
                 let obj = Object::validate(&buf).unwrap();
-                assert!(store.save(&obj).unwrap());
-                assert!(!store.save(&obj).unwrap());
+                assert!(store.save_unchecked(&obj).unwrap());
+                assert!(!store.save_unchecked(&obj).unwrap());
             }
             assert_eq!(store.file.stream_position().unwrap(), store.offset);
             assert!(store.contains(&hash));
@@ -624,7 +651,7 @@ mod tests {
         let hash = random_object(&mut buf, true);
         {
             let obj = Object::validate_with_expected_hash(&buf, &hash).unwrap();
-            store.save(&obj).unwrap();
+            store.save_unchecked(&obj).unwrap();
         }
         store.load(&hash, &mut buf).unwrap().unwrap();
         let entry = *store.map.get(&hash).unwrap();
