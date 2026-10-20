@@ -92,25 +92,35 @@ impl Entry {
     }
 }
 
-/// Wraps a file containing an object
+/// Wraps a file containing an object stream.
 ///
 /// # Examples
 ///
 /// ```
 /// use tempfile;
-/// use zf_zebrachaos::{Store, MutObject};
+/// use zf_zebrachaos::{MutObject, Store};
 ///
 /// let tmpdir = tempfile::TempDir::new().unwrap();
 /// let filename = tmpdir.path().join("chaos.data");
-/// let mut store = Store::create(&filename).unwrap();
 /// let mut buf = Vec::new();
-/// let mut obj = MutObject::new(&mut buf);
-/// obj.bound_extend_from_slice(b"hello, world");
-/// let obj = obj.finalize(42).unwrap();
-/// assert!(store.save(&obj).unwrap());
 ///
-/// // If we save the same object again, we get Ok(false)
-/// assert!(!store.save(&obj).unwrap());
+/// let hash = {
+///    // Create a store and save our first object:
+///    let mut store = Store::create(&filename).unwrap();
+///    let mut obj = MutObject::new(&mut buf);
+///    obj.bound_extend_from_slice(b"hello, world");
+///    let obj = obj.finalize(42).unwrap();
+///    assert!(store.save(&obj).unwrap());
+///
+///    // If we save the same object again, we get Ok(false):
+///    assert!(!store.save(&obj).unwrap());
+///    *obj.header().hash()
+/// };
+///
+/// // Reopen the `Store` load `Object` like this:
+/// let mut store = Store::open(&filename).unwrap();
+/// let obj = store.load(&hash, &mut buf).unwrap().unwrap();
+/// assert_eq!(obj.as_data(), b"hello, world");
 /// ```
 pub struct Store {
     file: File,
