@@ -47,7 +47,13 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
             self.buf.resize(HEADER, 0);
             match self.file.read(self.buf) {
                 Ok(0) => None,
-                Ok(HEADER) => {
+                Ok(n) => {
+                    if n < HEADER {
+                        match self.file.read_exact(&mut self.buf[n..]) {
+                            Ok(_) => {}
+                            Err(err) => return Some(Err(err)),
+                        }
+                    }
                     // All headers are valid as long as they are the correct length, so just .unwrap()
                     let header = ObjectHeader::read_from_buf(self.buf).unwrap();
                     self.buf.resize(header.buf_len(), 0);
@@ -65,10 +71,6 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
                         Err(err) => Some(Err(err)),
                     }
                 }
-                Ok(_) => Some(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "could not read full header",
-                ))),
                 Err(err) => Some(Err(err)),
             }
         }
