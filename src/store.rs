@@ -112,10 +112,10 @@ impl Entry {
 ///    let mut obj = MutObject::new(&mut buf);
 ///    obj.bound_extend_from_slice(b"hello, world");
 ///    let obj = obj.finalize(42).unwrap();
-///    assert!(store.save_unchecked(&obj).unwrap());
+///    assert!(store.save(&obj).unwrap());
 ///
 ///    // If we save the same object again, we get Ok(false):
-///    assert!(!store.save_unchecked(&obj).unwrap());
+///    assert!(!store.save(&obj).unwrap());
 ///    *obj.header().hash()
 /// };
 ///
@@ -123,6 +123,7 @@ impl Entry {
 /// let mut store = Store::open(&filename).unwrap();
 /// let obj = store.load(&hash, &mut buf).unwrap().unwrap();
 /// assert_eq!(obj.as_data(), b"hello, world");
+/// assert_eq!(obj.header().kind(), 42)
 /// ```
 pub struct Store {
     file: File,
@@ -552,7 +553,7 @@ mod tests {
                 let hash = random_object(&mut buf, false);
                 let obj = Object::validate(&buf).unwrap();
                 assert_eq!(obj.header().hash(), &hash);
-                store.save_unchecked(&obj).unwrap();
+                store.save(&obj).unwrap();
                 hashlist.push(hash);
             }
         }
@@ -604,8 +605,8 @@ mod tests {
             assert!(!store.contains(&hash));
             {
                 let obj = Object::validate(&buf).unwrap();
-                assert!(store.save_unchecked(&obj).unwrap());
-                assert!(!store.save_unchecked(&obj).unwrap());
+                assert!(store.save(&obj).unwrap());
+                assert!(!store.save(&obj).unwrap());
             }
             assert_eq!(store.file.stream_position().unwrap(), store.offset);
             assert!(store.contains(&hash));
@@ -653,7 +654,7 @@ mod tests {
         let hash = random_object(&mut buf, true);
         {
             let obj = Object::validate_with_expected_hash(&buf, &hash).unwrap();
-            store.save_unchecked(&obj).unwrap();
+            store.save(&obj).unwrap();
         }
         store.load(&hash, &mut buf).unwrap().unwrap();
         let entry = *store.map.get(&hash).unwrap();
