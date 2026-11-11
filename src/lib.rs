@@ -28,4 +28,4 @@ pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};
 pub use object::{Info, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
-pub use tree::{Directory, TreeError};
+pub use tree::{Directory, Item, TreeError};

@@ -12,6 +12,7 @@ pub enum TreeError {
     EmptyItem,
     ItemKind(u8),
     ItemHashLen(usize, usize),
+    EmptyDirectory,
     DirCapacityExceeded,
 }
 
@@ -57,7 +58,7 @@ impl Item {
         1 + match self {
             Self::EmptyDir => 0,
             Self::EmptyFile => 0,
-            Self::Dir(hash) | Self::File(hash) | Self::ExeFile(hash) => DIGEST,
+            Self::Dir(_) | Self::File(_) | Self::ExeFile(_) => DIGEST,
             Self::SymLink(name) => 1 + name.len(),
         }
     }
@@ -174,13 +175,17 @@ impl Directory {
     }
 
     pub fn serialize_into(&self, obj: &mut MutObject) -> Result<(), TreeError> {
-        let mut pairs = Vec::from_iter(self.map.iter());
-        pairs.sort_by(|a, b| a.0.cmp(b.0));
-        for (name, item) in pairs.iter() {
-            encode_name_into(&name, obj)?;
-            encode_item_into(&item, obj)?;
+        if self.map.is_empty() {
+            Err(TreeError::EmptyDirectory)
+        } else {
+            let mut pairs = Vec::from_iter(self.map.iter());
+            pairs.sort_by(|a, b| a.0.cmp(b.0));
+            for (name, item) in pairs.iter() {
+                encode_name_into(&name, obj)?;
+                encode_item_into(&item, obj)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
@@ -419,5 +424,44 @@ mod tests {
         assert_eq!(d.map.len(), 2);
         assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
         assert_eq!(d.map.get(&b), Some(&Item::EmptyFile));
+    }
+
+    #[test]
+    fn test_directory_serialize_into() {
+        let mut d = Directory::new();
+        {
+            let mut buf = Vec::new();
+            let mut obj = MutObject::new(&mut buf);
+            assert_eq!(d.serialize_into(&mut obj), Err(TreeError::EmptyDirectory));
+        }
+        d.insert(String::from("src"), Item::EmptyDir).unwrap();
+        {
+            let mut buf = Vec::new();
+            let mut obj = MutObject::new(&mut buf);
+            assert_eq!(d.serialize_into(&mut obj), Ok(()));
+            let obj = obj.finalize(1).unwrap();
+            assert_eq!(obj.as_data(), b"\x02src\x00");
+        }
+        d.insert(String::from("REAMDE.md"), Item::EmptyFile)
+            .unwrap();
+        {
+            let mut buf = Vec::new();
+            let mut obj = MutObject::new(&mut buf);
+            assert_eq!(d.serialize_into(&mut obj), Ok(()));
+            let obj = obj.finalize(1).unwrap();
+            assert_eq!(obj.as_data(), b"\x08REAMDE.md\x01\x02src\x00");
+        }
+        d.insert(String::from("foo"), Item::SymLink(String::from("bars")))
+            .unwrap();
+        {
+            let mut buf = Vec::new();
+            let mut obj = MutObject::new(&mut buf);
+            assert_eq!(d.serialize_into(&mut obj), Ok(()));
+            let obj = obj.finalize(1).unwrap();
+            assert_eq!(
+                obj.as_data(),
+                b"\x08REAMDE.md\x01\x02foo\x05\x03bars\x02src\x00"
+            );
+        }
     }
 }
