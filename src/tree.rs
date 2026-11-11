@@ -1,4 +1,4 @@
-use crate::{Hash, MutObject};
+use crate::{DIGEST, Hash, MutObject};
 use std::collections::HashMap;
 use std::io;
 
@@ -9,6 +9,9 @@ pub enum TreeError {
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
     DuplicateName(String, Item),
+    EmptyItem,
+    ItemKind(u8),
+    ItemHashLen(usize, usize),
     DirCapacityExceeded,
 }
 
@@ -49,6 +52,15 @@ impl Item {
             Self::SymLink(_) => 5,
         }
     }
+
+    pub fn len(&self) -> usize {
+        1 + match self {
+            Self::EmptyDir => 0,
+            Self::EmptyFile => 0,
+            Self::Dir(hash) | Self::File(hash) | Self::ExeFile(hash) => DIGEST,
+            Self::SymLink(name) => 1 + name.len(),
+        }
+    }
 }
 
 fn minus_one_encode(size: usize) -> Result<u8, TreeError> {
@@ -78,6 +90,32 @@ fn decode_name(buf: &[u8]) -> Result<String, TreeError> {
                 Ok(name) => Ok(name),
                 Err(utf8_err) => Err(TreeError::NameUtf8(utf8_err)),
             }
+        }
+    }
+}
+
+fn decode_hash(buf: &[u8]) -> Result<Hash, TreeError> {
+    if buf.len() < DIGEST {
+        Err(TreeError::ItemHashLen(DIGEST, buf.len()))
+    } else {
+        Ok(Hash::from_slice(&buf[..DIGEST]).unwrap())
+    }
+}
+
+fn decode_item(buf: &[u8]) -> Result<Item, TreeError> {
+    if buf.is_empty() {
+        Err(TreeError::EmptyItem)
+    } else {
+        let kind = buf[0];
+        let buf = &buf[1..];
+        match kind {
+            0 => Ok(Item::EmptyDir),
+            1 => Ok(Item::EmptyFile),
+            2 => Ok(Item::Dir(decode_hash(buf)?)),
+            3 => Ok(Item::File(decode_hash(buf)?)),
+            4 => Ok(Item::ExeFile(decode_hash(buf)?)),
+            5 => Ok(Item::SymLink(decode_name(buf)?)),
+            _ => Err(TreeError::ItemKind(kind)),
         }
     }
 }
@@ -126,13 +164,23 @@ impl Directory {
     }
 
     pub fn insert(&mut self, name: String, item: Item) -> Result<(), TreeError> {
+        minus_one_encode(name.len())?;
         if self.map.contains_key(&name) {
             Err(TreeError::DuplicateName(name, item))
         } else {
-            minus_one_encode(name.len())?;
             self.map.insert(name, item);
             Ok(())
         }
+    }
+
+    pub fn serialize_into(&self, obj: &mut MutObject) -> Result<(), TreeError> {
+        let mut pairs = Vec::from_iter(self.map.iter());
+        pairs.sort_by(|a, b| a.0.cmp(b.0));
+        for (name, item) in pairs.iter() {
+            encode_name_into(&name, obj)?;
+            encode_item_into(&item, obj)?;
+        }
+        Ok(())
     }
 }
 
@@ -141,6 +189,18 @@ mod tests {
     use super::*;
     use crate::DATA_MAX_LEN;
     use crate::testhelpers::random_hash;
+
+    #[test]
+    fn test_item_len() {
+        assert_eq!(Item::EmptyDir.len(), 1);
+        assert_eq!(Item::EmptyFile.len(), 1);
+        assert_eq!(Item::Dir(random_hash()).len(), 1 + DIGEST);
+        assert_eq!(Item::File(random_hash()).len(), 1 + DIGEST);
+        assert_eq!(Item::ExeFile(random_hash()).len(), 1 + DIGEST);
+        assert_eq!(Item::SymLink(String::from("B")).len(), 3);
+        let name = String::from_utf8(vec![0x42; 256]).unwrap();
+        assert_eq!(Item::SymLink(name).len(), 258);
+    }
 
     #[test]
     fn test_minus_one_encoding_roundtrip() {
@@ -168,6 +228,59 @@ mod tests {
         assert_eq!(decode_name(&[2, 66, 65]), Err(TreeError::NameLen(3, 2)));
         assert_eq!(decode_name(&[1, 66, 65]), Ok(String::from("BA")));
         assert_eq!(decode_name(&[0, 66, 65]), Ok(String::from("B")));
+    }
+
+    #[test]
+    fn test_decode_hash() {
+        assert_eq!(decode_hash(&[]), Err(TreeError::ItemHashLen(DIGEST, 0)));
+    }
+
+    #[test]
+    fn test_decode_item() {
+        assert_eq!(decode_item(&[]), Err(TreeError::EmptyItem));
+        for bad_kind in 6_u8..=255 {
+            assert_eq!(decode_item(&[bad_kind]), Err(TreeError::ItemKind(bad_kind)));
+        }
+        for kind in [2, 3, 4] {
+            assert_eq!(decode_item(&[kind]), Err(TreeError::ItemHashLen(DIGEST, 0)));
+            assert_eq!(
+                decode_item(&[kind; DIGEST]),
+                Err(TreeError::ItemHashLen(DIGEST, DIGEST - 1))
+            );
+        }
+        assert_eq!(decode_item(&[5]), Err(TreeError::EmptyName));
+        assert_eq!(decode_item(&[5, 0]), Err(TreeError::NameLen(1, 0)));
+        assert_eq!(decode_item(&[5, 1, 0x42]), Err(TreeError::NameLen(2, 1)));
+        assert_eq!(decode_item(&[5, 255]), Err(TreeError::NameLen(256, 0)));
+        assert_eq!(
+            decode_item(&[5, 255, 0x42]),
+            Err(TreeError::NameLen(256, 1))
+        );
+
+        assert_eq!(decode_item(&[0]), Ok(Item::EmptyDir));
+        assert_eq!(decode_item(&[1]), Ok(Item::EmptyFile));
+        assert_eq!(
+            decode_item(&[2; DIGEST + 1]),
+            Ok(Item::Dir(Hash::from_bytes([2; DIGEST])))
+        );
+        assert_eq!(
+            decode_item(&[3; DIGEST + 1]),
+            Ok(Item::File(Hash::from_bytes([3; DIGEST])))
+        );
+        assert_eq!(
+            decode_item(&[4; DIGEST + 1]),
+            Ok(Item::ExeFile(Hash::from_bytes([4; DIGEST])))
+        );
+        assert_eq!(
+            decode_item(&[5, 0, 0x42]),
+            Ok(Item::SymLink(String::from("B")))
+        );
+        let mut buf = vec![5, 255];
+        buf.extend_from_slice(&[0x42; 256]);
+        assert_eq!(
+            decode_item(&buf),
+            Ok(Item::SymLink(String::from_utf8(vec![0x42; 256]).unwrap()))
+        )
     }
 
     #[test]
