@@ -8,6 +8,7 @@ pub enum TreeError {
     NameLen(usize, usize),
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
+    DuplicateName(String, Item),
     DirCapacityExceeded,
 }
 
@@ -115,6 +116,24 @@ fn encode_item_into(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
 /// A directory.
 pub struct Directory {
     map: HashMap<String, Item>,
+}
+
+impl Directory {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, name: String, item: Item) -> Result<(), TreeError> {
+        if self.map.contains_key(&name) {
+            Err(TreeError::DuplicateName(name, item))
+        } else {
+            minus_one_encode(name.len())?;
+            self.map.insert(name, item);
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -230,5 +249,62 @@ mod tests {
             assert_eq!(obj.as_data()[1], 255);
             assert_eq!(&obj.as_data()[2..], &[65; 256]);
         }
+    }
+
+    #[test]
+    fn test_directory_new() {
+        let d = Directory::new();
+        assert!(d.map.is_empty());
+    }
+
+    #[test]
+    fn test_directory_insert() {
+        let mut d = Directory::new();
+
+        // Empty name
+        assert_eq!(
+            d.insert(String::from(""), Item::EmptyDir).unwrap_err(),
+            TreeError::NameLenBounds(0)
+        );
+        assert!(d.map.is_empty());
+
+        // Name is too long
+        assert_eq!(
+            d.insert(String::from_utf8(vec![0x42; 257]).unwrap(), Item::EmptyDir)
+                .unwrap_err(),
+            TreeError::NameLenBounds(257)
+        );
+        assert!(d.map.is_empty());
+
+        // New max length name "BBBB..."
+        let bees = String::from_utf8(vec![0x42; 256]).unwrap();
+        assert!(d.insert(bees.clone(), Item::EmptyDir).is_ok());
+        assert_eq!(d.map.len(), 1);
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+
+        // Duplicate of same max length name
+        assert_eq!(
+            d.insert(bees.clone(), Item::EmptyFile).unwrap_err(),
+            TreeError::DuplicateName(bees.clone(), Item::EmptyFile)
+        );
+        assert_eq!(d.map.len(), 1);
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+
+        // Min length name "B"
+        let b = String::from_utf8(vec![0x42; 1]).unwrap();
+        assert_eq!(&b, "B");
+        assert!(d.insert(b.clone(), Item::EmptyFile).is_ok());
+        assert_eq!(d.map.len(), 2);
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&b), Some(&Item::EmptyFile));
+
+        // Duplicate of same min length name
+        assert_eq!(
+            d.insert(b.clone(), Item::EmptyDir).unwrap_err(),
+            TreeError::DuplicateName(b.clone(), Item::EmptyDir)
+        );
+        assert_eq!(d.map.len(), 2);
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&b), Some(&Item::EmptyFile));
     }
 }
