@@ -1,5 +1,7 @@
 # 🦓 🤪 ZebraChaos: A Content Hash Addressable Object Store.
 
+[![crate][crate-image]][crate-link]
+[![Docs][docs-image]][docs-link]
 [![Build Status](https://github.com/zebrafactory/zebrachaos/actions/workflows/rust.yml/badge.svg)](https://github.com/zebrafactory/zebrachaos/actions)
 
 ZebraChaos is for storing filesystem shapshots as Merkle trees. It's a lot like Git, minus all
@@ -63,3 +65,8 @@ release is made.
 ## 🦀 SemVer Policy
 
 There will be one. There is not one yet and there wont be one till the 0.1.0 release.
+
+[crate-image]: https://img.shields.io/crates/v/zf-zebrachaos?logo=rust
+[crate-link]: https://crates.io/crates/zf-zebrachaos
+[docs-image]: https://docs.rs/zf-zebrachaos/badge.svg
+[docs-link]: https://docs.rs/zf-zebrachaos
