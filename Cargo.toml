@@ -1,6 +1,6 @@
 [package]
 name = "zf-zebrachaos"
-version = "0.0.0-pre.0"
+version = "0.0.1-rc.0"
 edition = "2024"
 rust-version = "1.99"
 description = """
@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 authors = ["Jason Gerard DeRose <jasonderose@gmail.com>"]
 documentation = "https://docs.rs/zf-zebrachaos"
 repository = "https://github.com/zebrafactory/zebrachaos"
-keywords = ["supply-chain-security", "awesomeness"]
+keywords = ["awesomeness"]
 categories = ["cryptography", "filesystem"]
 
 [dependencies]
