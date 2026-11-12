@@ -1,4 +1,4 @@
-# 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
+# 🦓 🤪 ZebraChaos: A Content Hash Addressable Object Store.
 
 [![Build Status](https://github.com/zebrafactory/zebrachaos/actions/workflows/rust.yml/badge.svg)](https://github.com/zebrafactory/zebrachaos/actions)
 
@@ -18,9 +18,9 @@ to tighted up the security of software build and delivery systems.
 
 * Rust for Linux kernel driver for mounting by hash a read-only, verify-on-read file system
 
-* Read-write compatibble FUSE driver
+* Read-write capable FUSE driver
 
-* Read-write Rust for Linux kernel driver
+* Read-write capable Rust for Linux kernel driver
 
 
 ## 📜 License

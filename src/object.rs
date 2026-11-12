@@ -42,7 +42,7 @@ impl core::fmt::Display for ObjectError {
 
 impl std::error::Error for ObjectError {}
 
-/// Object size and kind.
+/// Stores object size and kind.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Info {
     /// The internal `u32` with size and kind packed inside.
@@ -285,15 +285,16 @@ pub fn finalize_object<'a>(kind: u8, buf: &'a mut [u8]) -> Result<Object<'a>, Ob
 /// Object buffer builder.
 #[derive(Debug)]
 pub struct MutObject<'a> {
+    kind: u8,
     buf: &'a mut Vec<u8>,
 }
 
 impl<'a> MutObject<'a> {
     /// Initialize buffer for object construction.
-    pub fn new(buf: &'a mut Vec<u8>) -> Self {
+    pub fn new(kind: u8, buf: &'a mut Vec<u8>) -> Self {
         buf.clear();
         buf.resize(HEADER, 0);
-        Self { buf }
+        Self { kind, buf }
     }
 
     /// Bytes still available in buffer for object data.
@@ -318,9 +319,8 @@ impl<'a> MutObject<'a> {
 
     /// Append as many bytes as possible, returning the number of bytes appended.
     ///
-    /// This will never never extend the buffer past its allowed size.  It is not an error
-    /// for this method to append zero bytes when the buffer is already full, in which case
-    /// `Ok(0)` is returned.
+    /// This will never extend the buffer past its allowed size.  It is not an error for this
+    /// method to append zero bytes when the buffer is already full, in which case `Ok(0)` is returned.
     ///
     /// However, it is an error if `data` is empty, in which case an [ObjectError::DataLenBounds]
     /// `Err()` is returned.
@@ -335,10 +335,10 @@ impl<'a> MutObject<'a> {
     }
 
     /// Finalize buffer: set size and kind, compute hash, set hash.
-    pub fn finalize(self, kind: u8) -> Result<Object<'a>, ObjectError> {
+    pub fn finalize(self) -> Result<Object<'a>, ObjectError> {
         // FIXME: This should not error because we keep buffer size in check with above 2 methods.
         // This should probably be unwrapped.
-        finalize_object(kind, self.buf)
+        finalize_object(self.kind, self.buf)
     }
 }
 
@@ -602,18 +602,18 @@ mod tests {
     #[test]
     fn test_mutobject_new() {
         let mut buf = vec![42; HEADER + 1];
-        let obj = MutObject::new(&mut buf);
+        let obj = MutObject::new(0, &mut buf);
         assert_eq!(obj.buf, &[0; HEADER]);
 
         let mut buf = Vec::new();
-        let obj = MutObject::new(&mut buf);
+        let obj = MutObject::new(0, &mut buf);
         assert_eq!(obj.buf, &[0; HEADER]);
     }
 
     #[test]
     fn test_mutobject_try_extend_from_slice_and_remainng() {
         let mut buf = Vec::with_capacity(BUF_MAX_LEN);
-        let mut obj = MutObject::new(&mut buf);
+        let mut obj = MutObject::new(0, &mut buf);
 
         // Append empty data (should Err).
         let mut data = Vec::with_capacity(DATA_MAX_LEN);
@@ -650,7 +650,7 @@ mod tests {
     fn test_mutobject_bound_extend_from_slice_case_0() {
         // Test when data is empty on first call>
         let mut buf = Vec::new();
-        let mut obj = MutObject::new(&mut buf);
+        let mut obj = MutObject::new(0, &mut buf);
         assert_eq!(
             obj.bound_extend_from_slice(&[]).unwrap_err(),
             ObjectError::DataLenBounds
@@ -660,7 +660,7 @@ mod tests {
     #[test]
     fn test_mutobject_bound_extend_from_slice_case_1() {
         let mut buf = Vec::with_capacity(BUF_MAX_LEN);
-        let mut obj = MutObject::new(&mut buf);
+        let mut obj = MutObject::new(0, &mut buf);
         let chain = random_hash();
         let mut total = HEADER;
         for _ in 0..DATA_MAX_LEN / DIGEST {
@@ -693,14 +693,14 @@ mod tests {
     #[test]
     fn test_mutobject_finalize() {
         let mut buf = Vec::new();
-        let obj = MutObject::new(&mut buf);
+        let obj = MutObject::new(69, &mut buf);
         assert_eq!(obj.buf.len(), HEADER);
-        assert_eq!(obj.finalize(69).unwrap_err(), ObjectError::BufLenBounds);
+        assert_eq!(obj.finalize().unwrap_err(), ObjectError::BufLenBounds);
 
         let mut buf = Vec::new();
-        let obj = MutObject::new(&mut buf);
+        let obj = MutObject::new(69, &mut buf);
         obj.buf.extend_from_slice(&[42]);
-        let obj = obj.finalize(69).unwrap();
+        let obj = obj.finalize().unwrap();
         assert_eq!(obj.header().data_len(), 1);
         assert_eq!(obj.header().kind(), 69);
         assert_eq!(obj.as_data(), &[42]);

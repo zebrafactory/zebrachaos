@@ -36,7 +36,13 @@ pub struct Consumer<'a> {
     buf: &'a [u8],
 }
 
-impl<'a> Consumer<'a> {}
+impl<'a> Consumer<'a> {
+    pub fn take(&mut self, amount: usize) -> &[u8] {
+        let ret = &self.buf[..amount];
+        self.buf = &self.buf[amount..];
+        &self.buf[..amount]
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Name {
@@ -326,7 +332,7 @@ mod tests {
     #[test]
     fn test_encode_name_into() {
         let mut buf = Vec::new();
-        let mut obj = MutObject::new(&mut buf);
+        let mut obj = MutObject::new(1, &mut buf);
         assert_eq!(
             encode_name_into("", &mut obj),
             Err(TreeError::NameLenBounds(0))
@@ -339,7 +345,7 @@ mod tests {
         assert_eq!(obj.remaining(), DATA_MAX_LEN);
         assert!(encode_name_into("A", &mut obj).is_ok());
         assert!(encode_name_into("BA", &mut obj).is_ok());
-        let obj = obj.finalize(1).unwrap();
+        let obj = obj.finalize().unwrap();
         assert_eq!(obj.as_data(), &[0, 65, 1, 66, 65]);
     }
 
@@ -348,56 +354,56 @@ mod tests {
         let hash = random_hash();
         let mut buf = Vec::new();
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::EmptyDir;
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), &[0]);
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::EmptyFile;
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), &[1]);
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::Dir(hash.clone());
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 2);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::File(hash.clone());
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 3);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::ExeFile(hash.clone());
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 4);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(0, &mut buf);
             let item = Item::SymLink(String::from("A"));
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
             assert_eq!(&obj.as_data()[1..], &[0, 65]);
         }
         {
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(1, &mut buf);
             let item = Item::SymLink(String::from_utf8(vec![65; 256]).unwrap());
             encode_item_into(&item, &mut obj).unwrap();
-            let obj = obj.finalize(0).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
             assert_eq!(obj.as_data()[1], 255);
             assert_eq!(&obj.as_data()[2..], &[65; 256]);
@@ -466,33 +472,33 @@ mod tests {
         let mut d = Directory::new();
         {
             let mut buf = Vec::new();
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(1, &mut buf);
             assert_eq!(d.serialize_into(&mut obj), Err(TreeError::EmptyDirectory));
         }
         d.insert(String::from("src"), Item::EmptyDir).unwrap();
         {
             let mut buf = Vec::new();
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(1, &mut buf);
             assert_eq!(d.serialize_into(&mut obj), Ok(()));
-            let obj = obj.finalize(1).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), b"\x02src\x00");
         }
         d.insert(String::from("REAMDE.md"), Item::EmptyFile)
             .unwrap();
         {
             let mut buf = Vec::new();
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(1, &mut buf);
             assert_eq!(d.serialize_into(&mut obj), Ok(()));
-            let obj = obj.finalize(1).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), b"\x08REAMDE.md\x01\x02src\x00");
         }
         d.insert(String::from("foo"), Item::SymLink(String::from("bars")))
             .unwrap();
         {
             let mut buf = Vec::new();
-            let mut obj = MutObject::new(&mut buf);
+            let mut obj = MutObject::new(1, &mut buf);
             assert_eq!(d.serialize_into(&mut obj), Ok(()));
-            let obj = obj.finalize(1).unwrap();
+            let obj = obj.finalize().unwrap();
             assert_eq!(
                 obj.as_data(),
                 b"\x08REAMDE.md\x01\x02foo\x05\x03bars\x02src\x00"

@@ -109,9 +109,9 @@ impl Entry {
 /// let hash = {
 ///    // Create a store and save our first object:
 ///    let mut store = Store::create(&filename).unwrap();
-///    let mut obj = MutObject::new(&mut buf);
-///    obj.bound_extend_from_slice(b"hello, world").unwrap();
-///    let obj = obj.finalize(42).unwrap();
+///    let mut obj = MutObject::new(42, &mut buf);
+///    obj.try_extend_from_slice(b"hello, world").unwrap();
+///    let obj = obj.finalize().unwrap();
 ///    assert!(store.save(&obj).unwrap());
 ///
 ///    // If we save the same object again, we get Ok(false):

@@ -6,7 +6,7 @@
 )]
 #![cfg_attr(all(test, windows, feature = "nightly"), feature(core_io_borrowed_buf))]
 
-//! # 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
+//! # 🦓 🤪 ZebraChaos: A Content Hash Addressable Object Store.
 //!
 //! ZebraChaos is for storing filesystem shapshots as Merkle trees. It's a lot like Git, minus all
 //! the higher level version control features.
@@ -27,9 +27,9 @@
 //! let hash = {
 //!    // Create a store and save our first object:
 //!    let mut store = Store::create(&filename).unwrap();
-//!    let mut obj = MutObject::new(&mut buf);
-//!    obj.bound_extend_from_slice(b"hello, world").unwrap();
-//!    let obj = obj.finalize(42).unwrap();
+//!    let mut obj = MutObject::new(42, &mut buf);
+//!    obj.try_extend_from_slice(b"hello, world").unwrap();
+//!    let obj = obj.finalize().unwrap();
 //!    assert!(store.save(&obj).unwrap());
 //!
 //!    // If we save the same object again, we get Ok(false):
