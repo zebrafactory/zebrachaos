@@ -3,13 +3,15 @@ name = "zf-zebrachaos"
 version = "0.0.0-pre.0"
 edition = "2024"
 rust-version = "1.99"
+description = """
+🦓 🤪 ZebraChaos is a Content Hash Addressable Object Store. It's a lot like Git.
+"""
 license = "MIT OR Apache-2.0"
 authors = ["Jason Gerard DeRose <jasonderose@gmail.com>"]
-documentation = "https://docs.rs/zf-zebrachain"
+documentation = "https://docs.rs/zf-zebrachaos"
 repository = "https://github.com/zebrafactory/zebrachaos"
-description = """
-Place holder for the Zebra Factory Content Hash Addressable Object Store.
-"""
+keywords = ["supply-chain-security", "awesomeness"]
+categories = ["cryptography", "filesystem"]
 
 [dependencies]
 arrayvec = "0.7.8"

@@ -110,7 +110,7 @@ impl Entry {
 ///    // Create a store and save our first object:
 ///    let mut store = Store::create(&filename).unwrap();
 ///    let mut obj = MutObject::new(&mut buf);
-///    obj.bound_extend_from_slice(b"hello, world");
+///    obj.bound_extend_from_slice(b"hello, world").unwrap();
 ///    let obj = obj.finalize(42).unwrap();
 ///    assert!(store.save(&obj).unwrap());
 ///
@@ -185,7 +185,7 @@ impl Store {
     /// If the object's hash is already in the internal `HashMap`, this method does nothing.
     /// The updside is performance. The downside is this method does not double check that the
     /// existing object is actually loadable and valid at the present moment.
-    pub fn save_unchecked(&mut self, obj: &Object) -> io::Result<bool> {
+    pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
         if self.map.contains_key(obj.header().hash()) {
             Ok(false)
         } else {
@@ -198,7 +198,7 @@ impl Store {
     }
 
     /// Write object to file if not already present, verifying existing object for safety.
-    pub fn save(&mut self, obj: &Object) -> io::Result<bool> {
+    pub fn save_double_check(&mut self, obj: &Object) -> io::Result<bool> {
         match self.map.get(obj.header().hash()) {
             Some(entry) => {
                 // Object is in index, but double check it is readble and valid at this present moment.

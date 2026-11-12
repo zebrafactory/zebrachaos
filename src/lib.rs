@@ -6,9 +6,43 @@
 )]
 #![cfg_attr(all(test, windows, feature = "nightly"), feature(core_io_borrowed_buf))]
 
-//! 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
+//! # 🦓 🤪 ZebraChaos: A Git-like Content Hash Addressable Object Store.
 //!
+//! ZebraChaos is for storing filesystem shapshots as Merkle trees. It's a lot like Git, minus all
+//! the higher level version control features.
 //!
+//! In combitation with [ZebraChain](https://github.com/zebrafactory/zebrachain), ZebraChaos is designed
+//! to tighted up the security of software build and delivery systems.
+//!
+//! ##  🚀 Quickstart
+//!
+//! ```
+//! use tempfile;
+//! use zf_zebrachaos::{MutObject, Store};
+//!
+//! let tmpdir = tempfile::TempDir::new().unwrap();
+//! let filename = tmpdir.path().join("chaos.data");
+//! let mut buf = Vec::new();
+//!
+//! let hash = {
+//!    // Create a store and save our first object:
+//!    let mut store = Store::create(&filename).unwrap();
+//!    let mut obj = MutObject::new(&mut buf);
+//!    obj.bound_extend_from_slice(b"hello, world").unwrap();
+//!    let obj = obj.finalize(42).unwrap();
+//!    assert!(store.save(&obj).unwrap());
+//!
+//!    // If we save the same object again, we get Ok(false):
+//!    assert!(!store.save(&obj).unwrap());
+//!    *obj.header().hash()
+//! };
+//!
+//! // Reopen the `Store` load `Object` like this:
+//! let mut store = Store::open(&filename).unwrap();
+//! let obj = store.load(&hash, &mut buf).unwrap().unwrap();
+//! assert_eq!(obj.as_data(), b"hello, world");
+//! assert_eq!(obj.header().kind(), 42)
+//! ```
 
 mod always;
 mod fsutil;

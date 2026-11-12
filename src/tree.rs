@@ -8,6 +8,7 @@ pub enum TreeError {
     NameLen(usize, usize),
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
+    NameValue(String),
     DuplicateName(String, Item),
     EmptyItem,
     ItemKind(u8),
@@ -30,6 +31,40 @@ impl core::fmt::Display for TreeError {
 }
 
 impl core::error::Error for TreeError {}
+
+pub struct Consumer<'a> {
+    buf: &'a [u8],
+}
+
+impl<'a> Consumer<'a> {}
+
+#[derive(Debug, PartialEq)]
+pub struct Name {
+    inner: String,
+}
+
+impl Name {
+    pub fn from_string(inner: String) -> Result<Self, TreeError> {
+        if !(1..=256).contains(&inner.len()) {
+            Err(TreeError::NameLenBounds(inner.len()))
+        } else if inner == ".." || inner == "." {
+            Err(TreeError::NameValue(inner))
+        } else {
+            Ok(Self { inner })
+        }
+    }
+
+    pub fn from_utf8(vec: Vec<u8>) -> Result<Self, TreeError> {
+        match String::from_utf8(vec) {
+            Ok(inner) => Self::from_string(inner),
+            Err(utf8_err) => Err(TreeError::NameUtf8(utf8_err)),
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.as_bytes()
+    }
+}
 
 /// Value in the directory map.
 #[derive(Debug, PartialEq)]
