@@ -4,7 +4,6 @@ use std::io;
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
-    EmptyName,
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
     NameValue(String),
@@ -67,7 +66,7 @@ pub enum Item {
     Dir(Hash),
     File(Hash),
     ExeFile(Hash),
-    SymLink(String),
+    SymLink(Vec<String>),
 }
 
 impl Item {
@@ -79,15 +78,6 @@ impl Item {
             Self::File(_) => 3,
             Self::ExeFile(_) => 4,
             Self::SymLink(_) => 5,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        1 + match self {
-            Self::EmptyDir => 0,
-            Self::EmptyFile => 0,
-            Self::Dir(_) | Self::File(_) | Self::ExeFile(_) => DIGEST,
-            Self::SymLink(name) => 1 + name.len(),
         }
     }
 }
@@ -114,6 +104,15 @@ fn decode_name(reader: &mut ObjectReader) -> Result<String, TreeError> {
     }
 }
 
+fn decode_symlink(reader: &mut ObjectReader) -> Result<Vec<String>, TreeError> {
+    let count = minus_one_decode(reader.take(1)?[0]);
+    let mut symlink = Vec::with_capacity(count);
+    for _ in 0..count {
+        symlink.push(decode_name(reader)?);
+    }
+    Ok(symlink)
+}
+
 fn decode_hash(reader: &mut ObjectReader) -> Result<Hash, TreeError> {
     Ok(Hash::from_slice(reader.take(DIGEST)?).unwrap())
 }
@@ -126,7 +125,7 @@ fn decode_item(reader: &mut ObjectReader) -> Result<Item, TreeError> {
         2 => Ok(Item::Dir(decode_hash(reader)?)),
         3 => Ok(Item::File(decode_hash(reader)?)),
         4 => Ok(Item::ExeFile(decode_hash(reader)?)),
-        5 => Ok(Item::SymLink(decode_name(reader)?)),
+        5 => Ok(Item::SymLink(decode_symlink(reader)?)),
         _ => Err(TreeError::ItemKind(kind)),
     }
 }
@@ -138,6 +137,18 @@ fn encode_name_into(name: &str, obj: &mut MutObject) -> Result<(), TreeError> {
             Ok(_) => {}
             Err(_) => return Err(TreeError::DirCapacityExceeded),
         }
+    }
+    Ok(())
+}
+
+fn encode_symlink_into(symlink: &[String], obj: &mut MutObject) -> Result<(), TreeError> {
+    let encoded_count = minus_one_encode(symlink.len())?;
+    match obj.try_extend_from_slice(&[encoded_count]) {
+        Ok(_) => {}
+        Err(_) => return Err(TreeError::DirCapacityExceeded),
+    }
+    for name in symlink {
+        encode_name_into(name, obj)?;
     }
     Ok(())
 }
@@ -155,8 +166,8 @@ fn encode_item_into(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
                 Err(_) => return Err(TreeError::DirCapacityExceeded),
             }
         }
-        Item::SymLink(name) => {
-            encode_name_into(name, obj)?;
+        Item::SymLink(symlink) => {
+            encode_symlink_into(symlink, obj)?;
         }
     }
     Ok(())
@@ -267,18 +278,6 @@ mod tests {
     use crate::{DATA_MAX_LEN, HEADER, finalize_object};
 
     #[test]
-    fn test_item_len() {
-        assert_eq!(Item::EmptyDir.len(), 1);
-        assert_eq!(Item::EmptyFile.len(), 1);
-        assert_eq!(Item::Dir(random_hash()).len(), 1 + DIGEST);
-        assert_eq!(Item::File(random_hash()).len(), 1 + DIGEST);
-        assert_eq!(Item::ExeFile(random_hash()).len(), 1 + DIGEST);
-        assert_eq!(Item::SymLink(String::from("B")).len(), 3);
-        let name = String::from_utf8(vec![0x42; 256]).unwrap();
-        assert_eq!(Item::SymLink(name).len(), 258);
-    }
-
-    #[test]
     fn test_minus_one_encoding_roundtrip() {
         assert_eq!(minus_one_encode(0), Err(TreeError::NameLenBounds(0)));
         assert_eq!(minus_one_encode(1), Ok(0));
@@ -328,6 +327,48 @@ mod tests {
         assert_eq!(
             decode_name(&mut reader),
             Err(TreeError::DataNotAvailable(3, 2))
+        );
+    }
+
+    #[test]
+    fn test_decode_symlink() {
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[])),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0])),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0, 0])),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0, 1])),
+            Err(TreeError::DataNotAvailable(2, 0))
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0, 1])),
+            Err(TreeError::DataNotAvailable(2, 0))
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0, 0, 0x42])),
+            Ok(vec![String::from("B")])
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[0, 1, 0x42, 0x41])),
+            Ok(vec![String::from("BA")])
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[1, 0, 0x42, 0, 0x41])),
+            Ok(vec![String::from("B"), String::from("A")])
+        );
+        assert_eq!(
+            decode_symlink(&mut ObjectReader::raw(&[
+                1, 2, 0x42, 0x41, 0x44, 1, 0x41, 0x42
+            ])),
+            Ok(vec![String::from("BAD"), String::from("AB")])
         );
     }
 
@@ -398,24 +439,24 @@ mod tests {
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
-            Err(TreeError::DataNotAvailable(2, 0))
+            Err(TreeError::DataNotAvailable(1, 0))
         );
 
-        let buf = [5, 1, 0x42];
+        let buf = [5, 0, 1, 0x42];
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
             Err(TreeError::DataNotAvailable(2, 1))
         );
 
-        let buf = [5, 255];
+        let buf = [5, 0, 255];
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
             Err(TreeError::DataNotAvailable(256, 0))
         );
 
-        let buf = [5, 255, 0x42];
+        let buf = [5, 0, 255, 0x42];
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
@@ -451,19 +492,21 @@ mod tests {
             Ok(Item::ExeFile(Hash::from_bytes([4; DIGEST])))
         );
 
-        let buf = [5, 0, 0x42];
+        let buf = [5, 0, 0, 0x42];
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
-            Ok(Item::SymLink(String::from("B")))
+            Ok(Item::SymLink(vec![String::from("B")]))
         );
-        let mut buf = vec![5, 255];
+        let mut buf = vec![5, 0, 255];
         buf.extend_from_slice(&[0x42; 256]);
         let buf = buf;
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
-            Ok(Item::SymLink(String::from_utf8(vec![0x42; 256]).unwrap()))
+            Ok(Item::SymLink(vec![
+                String::from_utf8(vec![0x42; 256]).unwrap()
+            ]))
         )
     }
 
@@ -531,20 +574,21 @@ mod tests {
         }
         {
             let mut obj = MutObject::new(0, &mut buf);
-            let item = Item::SymLink(String::from("A"));
+            let item = Item::SymLink(vec![String::from("A")]);
             encode_item_into(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
-            assert_eq!(&obj.as_data()[1..], &[0, 65]);
+            assert_eq!(&obj.as_data()[1..], &[0, 0, 65]);
         }
         {
             let mut obj = MutObject::new(1, &mut buf);
-            let item = Item::SymLink(String::from_utf8(vec![65; 256]).unwrap());
+            let item = Item::SymLink(vec![String::from_utf8(vec![65; 256]).unwrap()]);
             encode_item_into(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
-            assert_eq!(obj.as_data()[1], 255);
-            assert_eq!(&obj.as_data()[2..], &[65; 256]);
+            assert_eq!(obj.as_data()[1], 0);
+            assert_eq!(obj.as_data()[2], 255);
+            assert_eq!(&obj.as_data()[3..], &[65; 256]);
         }
     }
 
@@ -597,7 +641,7 @@ mod tests {
         }
 
         {
-            let mut reader = ObjectReader::new(&obj);
+            let reader = ObjectReader::new(&obj);
             assert_eq!(reader.finish().unwrap_err(), TreeError::DataNotConsumed(64));
         }
 
@@ -691,8 +735,11 @@ mod tests {
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), b"\x08REAMDE.md\x01\x02src\x00");
         }
-        d.insert(String::from("foo"), Item::SymLink(String::from("bars")))
-            .unwrap();
+        d.insert(
+            String::from("foo"),
+            Item::SymLink(vec![String::from("bars")]),
+        )
+        .unwrap();
         {
             let mut buf = Vec::new();
             let mut obj = MutObject::new(1, &mut buf);
@@ -700,7 +747,7 @@ mod tests {
             let obj = obj.finalize().unwrap();
             assert_eq!(
                 obj.as_data(),
-                b"\x08REAMDE.md\x01\x02foo\x05\x03bars\x02src\x00"
+                b"\x08REAMDE.md\x01\x02foo\x05\x00\x03bars\x02src\x00"
             );
         }
     }
