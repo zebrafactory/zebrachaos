@@ -1,4 +1,4 @@
-use crate::{DIGEST, Hash, MutObject, Object};
+use crate::{DIGEST, Hash, MutObject, Object, ObjectReader};
 use std::collections::HashMap;
 use std::io;
 
@@ -15,8 +15,6 @@ pub enum TreeError {
     ItemHashLen(usize, usize),
     EmptyDirectory,
     DirCapacityExceeded,
-    DataNotAvailable(usize, usize),
-    DataNotConsumed(usize),
 }
 
 impl TreeError {
@@ -33,46 +31,6 @@ impl core::fmt::Display for TreeError {
 }
 
 impl core::error::Error for TreeError {}
-
-pub struct ObjectReader<'a> {
-    buf: &'a [u8],
-}
-
-impl<'a> ObjectReader<'a> {
-    pub fn new(obj: &'a Object) -> Self {
-        Self { buf: obj.as_data() }
-    }
-
-    pub fn remaining(&self) -> usize {
-        self.buf.len()
-    }
-
-    pub fn take(&mut self, amount: usize) -> Result<&[u8], TreeError> {
-        if self.buf.len() < amount {
-            Err(TreeError::DataNotAvailable(amount, self.buf.len()))
-        } else {
-            let ret = &self.buf[..amount];
-            self.buf = &self.buf[amount..];
-            Ok(ret)
-        }
-    }
-
-    pub fn peak(&self, amount: usize) -> Result<&[u8], TreeError> {
-        if self.buf.len() < amount {
-            Err(TreeError::DataNotAvailable(amount, self.buf.len()))
-        } else {
-            Ok(&self.buf[..amount])
-        }
-    }
-
-    pub fn finish(self) -> Result<(), TreeError> {
-        if self.buf.is_empty() {
-            Ok(())
-        } else {
-            Err(TreeError::DataNotConsumed(self.buf.len()))
-        }
-    }
-}
 
 #[derive(Debug, PartialEq)]
 pub struct Name {
