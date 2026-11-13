@@ -60,8 +60,6 @@ pub use always::{
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};
-pub use object::{
-    DataError, Info, MutObject, Object, ObjectError, ObjectHeader, ObjectReader, finalize_object,
-};
+pub use object::{Info, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
-pub use tree::{Directory, Item, TreeError};
+pub use tree::{Directory, Item, ObjectReader, TreeError};

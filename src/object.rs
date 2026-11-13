@@ -259,52 +259,6 @@ impl<'a> Object<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum DataError {
-    NotAvailable(usize, usize),
-    NotConsumed(usize),
-}
-
-pub struct ObjectReader<'a> {
-    buf: &'a [u8],
-}
-
-impl<'a> ObjectReader<'a> {
-    pub fn new(obj: &'a Object) -> Self {
-        Self { buf: obj.as_data() }
-    }
-
-    pub fn remaining(&self) -> usize {
-        self.buf.len()
-    }
-
-    pub fn take(&mut self, amount: usize) -> Result<&[u8], DataError> {
-        if self.buf.len() < amount {
-            Err(DataError::NotAvailable(amount, self.buf.len()))
-        } else {
-            let ret = &self.buf[..amount];
-            self.buf = &self.buf[amount..];
-            Ok(ret)
-        }
-    }
-
-    pub fn peak(&self, amount: usize) -> Result<&[u8], DataError> {
-        if self.buf.len() < amount {
-            Err(DataError::NotAvailable(amount, self.buf.len()))
-        } else {
-            Ok(&self.buf[..amount])
-        }
-    }
-
-    pub fn finish(self) -> Result<(), DataError> {
-        if self.buf.is_empty() {
-            Ok(())
-        } else {
-            Err(DataError::NotConsumed(self.buf.len()))
-        }
-    }
-}
-
 /// Set kind, size, and hash.
 ///
 /// # Examples
@@ -603,67 +557,6 @@ mod tests {
             assert_ne!(src, dst);
             header.write_to_buf(&mut dst).unwrap();
             assert_eq!(src, dst);
-        }
-    }
-
-    #[test]
-    fn test_objectreader() {
-        let mut data = vec![0; 64];
-        getrandom::fill(&mut data).unwrap();
-        let data = data;
-        let mut buf = vec![0; HEADER + 64];
-        buf[HEADER..].copy_from_slice(&data);
-        let obj = finalize_object(42, &mut buf).unwrap();
-
-        {
-            let mut reader = ObjectReader::new(&obj);
-            assert_eq!(reader.buf, &data);
-            assert_eq!(reader.remaining(), 64);
-            assert_eq!(reader.peak(64).unwrap(), &data);
-            assert_eq!(reader.buf, &data);
-            assert_eq!(reader.remaining(), 64);
-
-            assert_eq!(
-                reader.take(65).unwrap_err(),
-                DataError::NotAvailable(65, 64)
-            );
-            assert_eq!(reader.buf, &data);
-            assert_eq!(reader.remaining(), 64);
-
-            assert_eq!(
-                reader.peak(65).unwrap_err(),
-                DataError::NotAvailable(65, 64)
-            );
-            assert_eq!(reader.buf, &data);
-            assert_eq!(reader.remaining(), 64);
-
-            assert_eq!(reader.take(16).unwrap(), &data[..16]);
-            assert_eq!(reader.buf, &data[16..]);
-            assert_eq!(reader.remaining(), 48);
-
-            assert_eq!(
-                reader.take(49).unwrap_err(),
-                DataError::NotAvailable(49, 48)
-            );
-            assert_eq!(reader.buf, &data[16..]);
-            assert_eq!(reader.remaining(), 48);
-
-            assert_eq!(reader.take(48).unwrap(), &data[16..]);
-            assert_eq!(reader.buf, &[]);
-            assert_eq!(reader.remaining(), 0);
-            assert!(reader.finish().is_ok());
-        }
-
-        {
-            let mut reader = ObjectReader::new(&obj);
-            assert_eq!(reader.finish().unwrap_err(), DataError::NotConsumed(64));
-        }
-
-        {
-            let mut reader = ObjectReader::new(&obj);
-            assert_eq!(reader.take(63).unwrap(), &data[..63]);
-            assert_eq!(reader.remaining(), 1);
-            assert_eq!(reader.finish().unwrap_err(), DataError::NotConsumed(1));
         }
     }
 

@@ -1,20 +1,19 @@
-use crate::{DIGEST, Hash, MutObject, Object, ObjectReader};
+use crate::{DIGEST, Hash, MutObject, Object};
 use std::collections::HashMap;
 use std::io;
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
     EmptyName,
-    NameLen(usize, usize),
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
     NameValue(String),
     DuplicateName(String, Item),
-    EmptyItem,
     ItemKind(u8),
-    ItemHashLen(usize, usize),
     EmptyDirectory,
     DirCapacityExceeded,
+    DataNotAvailable(usize, usize),
+    DataNotConsumed(usize),
 }
 
 impl TreeError {
@@ -105,48 +104,30 @@ fn minus_one_decode(encoded_size: u8) -> usize {
     encoded_size as usize + 1
 }
 
-fn decode_name(buf: &[u8]) -> Result<String, TreeError> {
-    if buf.is_empty() {
-        Err(TreeError::EmptyName)
-    } else {
-        let size = minus_one_decode(buf[0]);
-        let buf = &buf[1..];
-        if buf.len() < size {
-            Err(TreeError::NameLen(size, buf.len()))
-        } else {
-            let mut key = Vec::with_capacity(size);
-            key.extend_from_slice(&buf[..size]);
-            match String::from_utf8(key) {
-                Ok(name) => Ok(name),
-                Err(utf8_err) => Err(TreeError::NameUtf8(utf8_err)),
-            }
-        }
+fn decode_name(reader: &mut ObjectReader) -> Result<String, TreeError> {
+    let size = minus_one_decode(reader.take(1)?[0]);
+    let mut key = Vec::with_capacity(size);
+    key.extend_from_slice(reader.take(size)?);
+    match String::from_utf8(key) {
+        Ok(name) => Ok(name),
+        Err(utf8_err) => Err(TreeError::NameUtf8(utf8_err)),
     }
 }
 
-fn decode_hash(buf: &[u8]) -> Result<Hash, TreeError> {
-    if buf.len() < DIGEST {
-        Err(TreeError::ItemHashLen(DIGEST, buf.len()))
-    } else {
-        Ok(Hash::from_slice(&buf[..DIGEST]).unwrap())
-    }
+fn decode_hash(reader: &mut ObjectReader) -> Result<Hash, TreeError> {
+    Ok(Hash::from_slice(reader.take(DIGEST)?).unwrap())
 }
 
-fn decode_item(buf: &[u8]) -> Result<Item, TreeError> {
-    if buf.is_empty() {
-        Err(TreeError::EmptyItem)
-    } else {
-        let kind = buf[0];
-        let buf = &buf[1..];
-        match kind {
-            0 => Ok(Item::EmptyDir),
-            1 => Ok(Item::EmptyFile),
-            2 => Ok(Item::Dir(decode_hash(buf)?)),
-            3 => Ok(Item::File(decode_hash(buf)?)),
-            4 => Ok(Item::ExeFile(decode_hash(buf)?)),
-            5 => Ok(Item::SymLink(decode_name(buf)?)),
-            _ => Err(TreeError::ItemKind(kind)),
-        }
+fn decode_item(reader: &mut ObjectReader) -> Result<Item, TreeError> {
+    let kind = reader.take(1)?[0];
+    match kind {
+        0 => Ok(Item::EmptyDir),
+        1 => Ok(Item::EmptyFile),
+        2 => Ok(Item::Dir(decode_hash(reader)?)),
+        3 => Ok(Item::File(decode_hash(reader)?)),
+        4 => Ok(Item::ExeFile(decode_hash(reader)?)),
+        5 => Ok(Item::SymLink(decode_name(reader)?)),
+        _ => Err(TreeError::ItemKind(kind)),
     }
 }
 
@@ -179,6 +160,55 @@ fn encode_item_into(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
         }
     }
     Ok(())
+}
+
+pub struct ObjectReader<'a> {
+    buf: &'a [u8],
+}
+
+impl<'a> ObjectReader<'a> {
+    #[cfg(test)]
+    fn raw(buf: &'a [u8]) -> Self {
+        Self { buf }
+    }
+
+    pub fn new(obj: &'a Object) -> Self {
+        Self { buf: obj.as_data() }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn take(&mut self, amount: usize) -> Result<&[u8], TreeError> {
+        if self.buf.len() < amount {
+            Err(TreeError::DataNotAvailable(amount, self.buf.len()))
+        } else {
+            let ret = &self.buf[..amount];
+            self.buf = &self.buf[amount..];
+            Ok(ret)
+        }
+    }
+
+    pub fn peak(&self, amount: usize) -> Result<&[u8], TreeError> {
+        if self.buf.len() < amount {
+            Err(TreeError::DataNotAvailable(amount, self.buf.len()))
+        } else {
+            Ok(&self.buf[..amount])
+        }
+    }
+
+    pub fn finish(self) -> Result<(), TreeError> {
+        if self.buf.is_empty() {
+            Ok(())
+        } else {
+            Err(TreeError::DataNotConsumed(self.buf.len()))
+        }
+    }
 }
 
 /// A directory.
@@ -220,15 +250,21 @@ impl Directory {
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
         let mut directory = Directory::new();
         let mut reader = ObjectReader::new(obj);
-        Err(TreeError::EmptyName)
+        while !reader.is_empty() {
+            let name = decode_name(&mut reader)?;
+            let item = decode_item(&mut reader)?;
+            directory.insert(name, item)?;
+        }
+        reader.finish()?;
+        Ok(directory)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DATA_MAX_LEN;
     use crate::testhelpers::random_hash;
+    use crate::{DATA_MAX_LEN, HEADER, finalize_object};
 
     #[test]
     fn test_item_len() {
@@ -260,65 +296,173 @@ mod tests {
 
     #[test]
     fn test_decode_name() {
-        assert_eq!(decode_name(&[]), Err(TreeError::EmptyName));
-        assert_eq!(decode_name(&[0]), Err(TreeError::NameLen(1, 0)));
-        assert_eq!(decode_name(&[1]), Err(TreeError::NameLen(2, 0)));
-        assert_eq!(decode_name(&[1, 65]), Err(TreeError::NameLen(2, 1)));
-        assert_eq!(decode_name(&[0, 65]), Ok(String::from("A")));
-        assert_eq!(decode_name(&[2, 66, 65]), Err(TreeError::NameLen(3, 2)));
-        assert_eq!(decode_name(&[1, 66, 65]), Ok(String::from("BA")));
-        assert_eq!(decode_name(&[0, 66, 65]), Ok(String::from("B")));
+        let mut reader = ObjectReader::raw(&[]);
+        assert_eq!(
+            decode_name(&mut reader),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        let mut reader = ObjectReader::raw(&[0]);
+        assert_eq!(
+            decode_name(&mut reader),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        let mut reader = ObjectReader::raw(&[1]);
+        assert_eq!(
+            decode_name(&mut reader),
+            Err(TreeError::DataNotAvailable(2, 0))
+        );
+        let mut reader = ObjectReader::raw(&[1, 0x41]);
+        assert_eq!(
+            decode_name(&mut reader),
+            Err(TreeError::DataNotAvailable(2, 1))
+        );
+
+        let mut reader = ObjectReader::raw(&[0, 0x42]);
+        assert_eq!(decode_name(&mut reader), Ok(String::from("B")));
+        let mut reader = ObjectReader::raw(&[0, 0x42, 0x41]);
+        assert_eq!(decode_name(&mut reader), Ok(String::from("B")));
+        let mut reader = ObjectReader::raw(&[1, 0x42, 0x41]);
+        assert_eq!(decode_name(&mut reader), Ok(String::from("BA")));
+
+        let mut reader = ObjectReader::raw(&[2, 0x42, 0x41]);
+        assert_eq!(
+            decode_name(&mut reader),
+            Err(TreeError::DataNotAvailable(3, 2))
+        );
     }
 
     #[test]
     fn test_decode_hash() {
-        assert_eq!(decode_hash(&[]), Err(TreeError::ItemHashLen(DIGEST, 0)));
+        let mut reader = ObjectReader::raw(&[]);
+        assert_eq!(
+            decode_hash(&mut reader),
+            Err(TreeError::DataNotAvailable(DIGEST, 0))
+        );
+        let mut reader = ObjectReader::raw(&[69; 1]);
+        assert_eq!(
+            decode_hash(&mut reader),
+            Err(TreeError::DataNotAvailable(DIGEST, 1))
+        );
+        let mut reader = ObjectReader::raw(&[69; DIGEST - 1]);
+        assert_eq!(
+            decode_hash(&mut reader),
+            Err(TreeError::DataNotAvailable(DIGEST, DIGEST - 1))
+        );
+        let mut reader = ObjectReader::raw(&[69; DIGEST]);
+        assert_eq!(decode_hash(&mut reader), Ok(Hash::from_bytes([69; DIGEST])));
     }
 
     #[test]
     fn test_decode_item() {
-        assert_eq!(decode_item(&[]), Err(TreeError::EmptyItem));
-        for bad_kind in 6_u8..=255 {
-            assert_eq!(decode_item(&[bad_kind]), Err(TreeError::ItemKind(bad_kind)));
+        let mut reader = ObjectReader::raw(&[]);
+        assert_eq!(
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+        for bad_kind in 6..=255 {
+            let buf = [bad_kind; 1];
+            let mut reader = ObjectReader::raw(&buf);
+            assert_eq!(decode_item(&mut reader), Err(TreeError::ItemKind(bad_kind)));
         }
+
         for kind in [2, 3, 4] {
-            assert_eq!(decode_item(&[kind]), Err(TreeError::ItemHashLen(DIGEST, 0)));
+            let buf = [kind; 1];
+            let mut reader = ObjectReader::raw(&buf);
             assert_eq!(
-                decode_item(&[kind; DIGEST]),
-                Err(TreeError::ItemHashLen(DIGEST, DIGEST - 1))
+                decode_item(&mut reader),
+                Err(TreeError::DataNotAvailable(DIGEST, 0))
+            );
+            let buf = [kind; DIGEST];
+            let mut reader = ObjectReader::raw(&buf);
+            assert_eq!(
+                decode_item(&mut reader),
+                Err(TreeError::DataNotAvailable(DIGEST, DIGEST - 1))
             );
         }
-        assert_eq!(decode_item(&[5]), Err(TreeError::EmptyName));
-        assert_eq!(decode_item(&[5, 0]), Err(TreeError::NameLen(1, 0)));
-        assert_eq!(decode_item(&[5, 1, 0x42]), Err(TreeError::NameLen(2, 1)));
-        assert_eq!(decode_item(&[5, 255]), Err(TreeError::NameLen(256, 0)));
+
+        let buf = [5];
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&[5, 255, 0x42]),
-            Err(TreeError::NameLen(256, 1))
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(1, 0))
         );
 
-        assert_eq!(decode_item(&[0]), Ok(Item::EmptyDir));
-        assert_eq!(decode_item(&[1]), Ok(Item::EmptyFile));
+        let buf = [5, 0];
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&[2; DIGEST + 1]),
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(1, 0))
+        );
+
+        let buf = [5, 1];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(2, 0))
+        );
+
+        let buf = [5, 1, 0x42];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(2, 1))
+        );
+
+        let buf = [5, 255];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(256, 0))
+        );
+
+        let buf = [5, 255, 0x42];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(
+            decode_item(&mut reader),
+            Err(TreeError::DataNotAvailable(256, 1))
+        );
+
+        let buf = [0];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(decode_item(&mut reader), Ok(Item::EmptyDir));
+
+        let buf = [1];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(decode_item(&mut reader), Ok(Item::EmptyFile));
+
+        let buf = [2; DIGEST + 1];
+        let mut reader = ObjectReader::raw(&buf);
+        assert_eq!(
+            decode_item(&mut reader),
             Ok(Item::Dir(Hash::from_bytes([2; DIGEST])))
         );
+
+        let buf = [3; DIGEST + 1];
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&[3; DIGEST + 1]),
+            decode_item(&mut reader),
             Ok(Item::File(Hash::from_bytes([3; DIGEST])))
         );
+
+        let buf = [4; DIGEST + 1];
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&[4; DIGEST + 1]),
+            decode_item(&mut reader),
             Ok(Item::ExeFile(Hash::from_bytes([4; DIGEST])))
         );
+
+        let buf = [5, 0, 0x42];
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&[5, 0, 0x42]),
+            decode_item(&mut reader),
             Ok(Item::SymLink(String::from("B")))
         );
         let mut buf = vec![5, 255];
         buf.extend_from_slice(&[0x42; 256]);
+        let buf = buf;
+        let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
-            decode_item(&buf),
+            decode_item(&mut reader),
             Ok(Item::SymLink(String::from_utf8(vec![0x42; 256]).unwrap()))
         )
     }
@@ -401,6 +545,67 @@ mod tests {
             assert_eq!(obj.as_data()[0], 5);
             assert_eq!(obj.as_data()[1], 255);
             assert_eq!(&obj.as_data()[2..], &[65; 256]);
+        }
+    }
+
+    #[test]
+    fn test_objectreader() {
+        let mut data = vec![0; 64];
+        getrandom::fill(&mut data).unwrap();
+        let data = data;
+        let mut buf = vec![0; HEADER + 64];
+        buf[HEADER..].copy_from_slice(&data);
+        let obj = finalize_object(42, &mut buf).unwrap();
+
+        {
+            let mut reader = ObjectReader::new(&obj);
+            assert_eq!(reader.buf, &data);
+            assert_eq!(reader.remaining(), 64);
+            assert_eq!(reader.peak(64).unwrap(), &data);
+            assert_eq!(reader.buf, &data);
+            assert_eq!(reader.remaining(), 64);
+
+            assert_eq!(
+                reader.take(65).unwrap_err(),
+                TreeError::DataNotAvailable(65, 64)
+            );
+            assert_eq!(reader.buf, &data);
+            assert_eq!(reader.remaining(), 64);
+
+            assert_eq!(
+                reader.peak(65).unwrap_err(),
+                TreeError::DataNotAvailable(65, 64)
+            );
+            assert_eq!(reader.buf, &data);
+            assert_eq!(reader.remaining(), 64);
+
+            assert_eq!(reader.take(16).unwrap(), &data[..16]);
+            assert_eq!(reader.buf, &data[16..]);
+            assert_eq!(reader.remaining(), 48);
+
+            assert_eq!(
+                reader.take(49).unwrap_err(),
+                TreeError::DataNotAvailable(49, 48)
+            );
+            assert_eq!(reader.buf, &data[16..]);
+            assert_eq!(reader.remaining(), 48);
+
+            assert_eq!(reader.take(48).unwrap(), &data[16..]);
+            assert_eq!(reader.buf, &[]);
+            assert_eq!(reader.remaining(), 0);
+            assert!(reader.finish().is_ok());
+        }
+
+        {
+            let mut reader = ObjectReader::new(&obj);
+            assert_eq!(reader.finish().unwrap_err(), TreeError::DataNotConsumed(64));
+        }
+
+        {
+            let mut reader = ObjectReader::new(&obj);
+            assert_eq!(reader.take(63).unwrap(), &data[..63]);
+            assert_eq!(reader.remaining(), 1);
+            assert_eq!(reader.finish().unwrap_err(), TreeError::DataNotConsumed(1));
         }
     }
 
