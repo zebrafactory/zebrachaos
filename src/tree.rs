@@ -6,7 +6,7 @@ use std::io;
 pub enum TreeError {
     NameLenBounds(usize),
     NameUtf8(std::string::FromUtf8Error),
-    NameValue(String),
+    BadName(String),
     DuplicateName(String, Item),
     ItemKind(u8),
     EmptyDirectory,
@@ -29,34 +29,6 @@ impl core::fmt::Display for TreeError {
 }
 
 impl core::error::Error for TreeError {}
-
-#[derive(Debug, PartialEq)]
-pub struct Name {
-    inner: String,
-}
-
-impl Name {
-    pub fn from_string(inner: String) -> Result<Self, TreeError> {
-        if !(1..=256).contains(&inner.len()) {
-            Err(TreeError::NameLenBounds(inner.len()))
-        } else if inner == ".." || inner == "." {
-            Err(TreeError::NameValue(inner))
-        } else {
-            Ok(Self { inner })
-        }
-    }
-
-    pub fn from_utf8(vec: Vec<u8>) -> Result<Self, TreeError> {
-        match String::from_utf8(vec) {
-            Ok(inner) => Self::from_string(inner),
-            Err(utf8_err) => Err(TreeError::NameUtf8(utf8_err)),
-        }
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        self.inner.as_bytes()
-    }
-}
 
 /// Value in the directory map.
 #[derive(Debug, PartialEq)]
@@ -236,7 +208,9 @@ impl Directory {
 
     pub fn insert(&mut self, name: String, item: Item) -> Result<(), TreeError> {
         minus_one_encode(name.len())?;
-        if self.map.contains_key(&name) {
+        if &name == "." || &name == ".." {
+            Err(TreeError::BadName(name))
+        } else if self.map.contains_key(&name) {
             Err(TreeError::DuplicateName(name, item))
         } else {
             self.map.insert(name, item);
@@ -678,7 +652,19 @@ mod tests {
         );
         assert!(d.map.is_empty());
 
-        // New max length name "BBBB..."
+        // "." and ".." are now allowed
+        assert_eq!(
+            d.insert(String::from("."), Item::EmptyDir).unwrap_err(),
+            TreeError::BadName(String::from("."))
+        );
+        assert!(d.map.is_empty());
+        assert_eq!(
+            d.insert(String::from(".."), Item::EmptyDir).unwrap_err(),
+            TreeError::BadName(String::from(".."))
+        );
+        assert!(d.map.is_empty());
+
+        // Max length name "BBBB..."
         let bees = String::from_utf8(vec![0x42; 256]).unwrap();
         assert!(d.insert(bees.clone(), Item::EmptyDir).is_ok());
         assert_eq!(d.map.len(), 1);
