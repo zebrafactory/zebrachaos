@@ -1,11 +1,11 @@
 use crate::{DIGEST, Hash, MutObject, Object, Store, create_for_append};
 use std::collections::HashMap;
-use std::fs::{self, File, Permissions};
+use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
@@ -287,6 +287,19 @@ impl Tree {
         }
     }
 
+    #[cfg(unix)]
+    fn restore_executable_file(&mut self, hash: &Hash, path: &Path) -> io::Result<()> {
+        let file = self.restore_file(hash, path)?;
+        file.set_permissions(Permissions::from_mode(0o700))?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn restore_executable_file(&mut self, hash: &Hash, path: &Path) -> io::Result<()> {
+        self.restore_file(hash, path)?;
+        Ok(())
+    }
+
     fn load_directory(&mut self, hash: &Hash) -> io::Result<Directory> {
         if let Some(result) = self.store.load(hash, &mut self.buf) {
             let obj = result?;
@@ -321,9 +334,7 @@ impl Tree {
                     self.restore_file(&sub_hash, &sub_path)?;
                 }
                 Item::ExeFile(sub_hash) => {
-                    let file = self.restore_file(&sub_hash, &sub_path)?;
-                    #[cfg(unix)]
-                    file.set_permissions(Permissions::from_mode(0o700))?;
+                    self.restore_executable_file(&sub_hash, &sub_path)?;
                 }
                 _ => panic!("no good, bruh"),
             }
