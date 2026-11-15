@@ -5,7 +5,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+use std::{
+    fs::Permissions,
+    os::unix::fs::{PermissionsExt, symlink},
+};
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
@@ -108,7 +111,7 @@ fn decode_item(reader: &mut ObjectReader) -> Result<Item, TreeError> {
     }
 }
 
-fn encode_name_into(name: &str, obj: &mut MutObject) -> Result<(), TreeError> {
+fn encode_name(name: &str, obj: &mut MutObject) -> Result<(), TreeError> {
     let encoded_size = minus_one_encode(name.len())?;
     for buf in [&[encoded_size], name.as_bytes()] {
         match obj.try_extend_from_slice(buf) {
@@ -119,19 +122,19 @@ fn encode_name_into(name: &str, obj: &mut MutObject) -> Result<(), TreeError> {
     Ok(())
 }
 
-fn encode_symlink_into(symlink: &[String], obj: &mut MutObject) -> Result<(), TreeError> {
+fn encode_symlink(symlink: &[String], obj: &mut MutObject) -> Result<(), TreeError> {
     let encoded_count = minus_one_encode(symlink.len())?;
     match obj.try_extend_from_slice(&[encoded_count]) {
         Ok(_) => {}
         Err(_) => return Err(TreeError::DirCapacityExceeded),
     }
     for name in symlink {
-        encode_name_into(name, obj)?;
+        encode_name(name, obj)?;
     }
     Ok(())
 }
 
-fn encode_item_into(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
+fn encode_item(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
     match obj.try_extend_from_slice(&[item.kind_byte()]) {
         Ok(_) => {}
         Err(_) => return Err(TreeError::DirCapacityExceeded),
@@ -145,7 +148,7 @@ fn encode_item_into(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
             }
         }
         Item::SymLink(symlink) => {
-            encode_symlink_into(symlink, obj)?;
+            encode_symlink(symlink, obj)?;
         }
     }
     Ok(())
@@ -235,8 +238,8 @@ impl Directory {
             let mut pairs = Vec::from_iter(self.map.iter());
             pairs.sort_by(|a, b| a.0.cmp(b.0));
             for (name, item) in pairs.iter() {
-                encode_name_into(&name, obj)?;
-                encode_item_into(&item, obj)?;
+                encode_name(&name, obj)?;
+                encode_item(&item, obj)?;
             }
             Ok(())
         }
@@ -300,6 +303,21 @@ impl Tree {
         Ok(())
     }
 
+    #[cfg(unix)]
+    fn restore_symlink(&mut self, value: &Vec<String>, path: &Path) -> io::Result<()> {
+        let mut target = PathBuf::new();
+        for name in value {
+            target.push(name);
+        }
+        symlink(&target, path)?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn restore_symlink(&mut self, _value: &Vec<String>, _path: &Path) -> io::Result<()> {
+        Ok(())
+    }
+
     fn load_directory(&mut self, hash: &Hash) -> io::Result<Directory> {
         if let Some(result) = self.store.load(hash, &mut self.buf) {
             let obj = result?;
@@ -336,7 +354,9 @@ impl Tree {
                 Item::ExeFile(sub_hash) => {
                     self.restore_executable_file(&sub_hash, &sub_path)?;
                 }
-                _ => panic!("no good, bruh"),
+                Item::SymLink(symlink) => {
+                    self.restore_symlink(&symlink, &sub_path)?;
+                }
             }
         }
         Ok(())
@@ -588,47 +608,44 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_name_into() {
+    fn test_encode_name() {
         let mut buf = Vec::new();
         let mut obj = MutObject::new(1, &mut buf);
-        assert_eq!(
-            encode_name_into("", &mut obj),
-            Err(TreeError::NameLenBounds(0))
-        );
+        assert_eq!(encode_name("", &mut obj), Err(TreeError::NameLenBounds(0)));
         assert_eq!(obj.remaining(), DATA_MAX_LEN);
         assert_eq!(
-            encode_name_into(&String::from_utf8(vec![65; 257]).unwrap(), &mut obj),
+            encode_name(&String::from_utf8(vec![65; 257]).unwrap(), &mut obj),
             Err(TreeError::NameLenBounds(257))
         );
         assert_eq!(obj.remaining(), DATA_MAX_LEN);
-        assert!(encode_name_into("A", &mut obj).is_ok());
-        assert!(encode_name_into("BA", &mut obj).is_ok());
+        assert!(encode_name("A", &mut obj).is_ok());
+        assert!(encode_name("BA", &mut obj).is_ok());
         let obj = obj.finalize().unwrap();
         assert_eq!(obj.as_data(), &[0, 65, 1, 66, 65]);
     }
 
     #[test]
-    fn test_encode_item_into() {
+    fn test_encode_item() {
         let hash = random_hash();
         let mut buf = Vec::new();
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::EmptyDir;
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), &[0]);
         }
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::EmptyFile;
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), &[1]);
         }
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::Dir(hash.clone());
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 2);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
@@ -636,7 +653,7 @@ mod tests {
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::File(hash.clone());
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 3);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
@@ -644,7 +661,7 @@ mod tests {
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::ExeFile(hash.clone());
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 4);
             assert_eq!(&obj.as_data()[1..], hash.as_bytes());
@@ -652,7 +669,7 @@ mod tests {
         {
             let mut obj = MutObject::new(0, &mut buf);
             let item = Item::SymLink(vec![String::from("A")]);
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
             assert_eq!(&obj.as_data()[1..], &[0, 0, 65]);
@@ -660,7 +677,7 @@ mod tests {
         {
             let mut obj = MutObject::new(1, &mut buf);
             let item = Item::SymLink(vec![String::from_utf8(vec![65; 256]).unwrap()]);
-            encode_item_into(&item, &mut obj).unwrap();
+            encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 5);
             assert_eq!(obj.as_data()[1], 0);
