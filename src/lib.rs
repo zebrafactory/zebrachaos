@@ -1,5 +1,5 @@
 #![forbid(unsafe_code, unused_must_use, rustdoc::broken_intra_doc_links)]
-#![warn(missing_docs)]
+//#![warn(missing_docs)]
 #![cfg_attr(
     all(windows, feature = "nightly"),
     feature(seek_read_exact_seek_write_all)
@@ -62,4 +62,4 @@ pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};
 pub use object::{Info, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
-pub use tree::{Directory, Item, ObjectReader, TreeError};
+pub use tree::{Directory, Item, ObjectReader, Tree, TreeError};

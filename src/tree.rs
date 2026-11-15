@@ -1,6 +1,11 @@
-use crate::{DIGEST, Hash, MutObject, Object};
+use crate::{DIGEST, Hash, MutObject, Object, Store, create_for_append};
 use std::collections::HashMap;
-use std::io;
+use std::fs::{self, File, Permissions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
@@ -13,6 +18,7 @@ pub enum TreeError {
     DirCapacityExceeded,
     DataNotAvailable(usize, usize),
     DataNotConsumed(usize),
+    ObjectNotFound(Hash),
 }
 
 impl TreeError {
@@ -206,6 +212,10 @@ impl Directory {
         }
     }
 
+    pub fn as_map(&self) -> &HashMap<String, Item> {
+        &self.map
+    }
+
     pub fn insert(&mut self, name: String, item: Item) -> Result<(), TreeError> {
         minus_one_encode(name.len())?;
         if &name == "." || &name == ".." {
@@ -242,6 +252,88 @@ impl Directory {
         }
         reader.finish()?;
         Ok(directory)
+    }
+}
+
+/// Save/restore directory on a filesystem
+#[derive(Debug)]
+pub struct Tree {
+    store: Store,
+    base_dir: PathBuf,
+    buf: Vec<u8>,
+}
+
+impl Tree {
+    pub fn new(store: Store, base_dir: PathBuf) -> Self {
+        Self {
+            store,
+            base_dir,
+            buf: Vec::new(),
+        }
+    }
+
+    pub fn into_store_root(self) -> (Store, PathBuf) {
+        (self.store, self.base_dir)
+    }
+
+    fn restore_file(&mut self, hash: &Hash, path: &Path) -> io::Result<File> {
+        if let Some(result) = self.store.load(hash, &mut self.buf) {
+            let obj = result?;
+            let mut file = create_for_append(path)?;
+            file.write_all(obj.as_data())?;
+            Ok(file)
+        } else {
+            Err(TreeError::ObjectNotFound(*hash).into_io_error())
+        }
+    }
+
+    fn load_directory(&mut self, hash: &Hash) -> io::Result<Directory> {
+        if let Some(result) = self.store.load(hash, &mut self.buf) {
+            let obj = result?;
+            match Directory::deserialize_from(&obj) {
+                Ok(dir) => Ok(dir),
+                Err(tree_err) => Err(tree_err.into_io_error()),
+            }
+        } else {
+            Err(TreeError::ObjectNotFound(*hash).into_io_error())
+        }
+    }
+
+    fn restore_inner(&mut self, hash: &Hash, path: &Path, depth: usize) -> io::Result<()> {
+        if depth >= 32 {
+            panic!("max tree depth");
+        }
+        let dir = self.load_directory(hash)?;
+        for (name, item) in dir.as_map() {
+            let sub_path = path.join(name);
+            match item {
+                Item::EmptyDir => {
+                    fs::create_dir(&sub_path)?;
+                }
+                Item::EmptyFile => {
+                    create_for_append(&sub_path)?;
+                }
+                Item::Dir(sub_hash) => {
+                    fs::create_dir(&sub_path)?;
+                    self.restore_inner(&sub_hash, &sub_path, depth + 1)?;
+                }
+                Item::File(sub_hash) => {
+                    self.restore_file(&sub_hash, &sub_path)?;
+                }
+                Item::ExeFile(sub_hash) => {
+                    let file = self.restore_file(&sub_hash, &sub_path)?;
+                    #[cfg(unix)]
+                    file.set_permissions(Permissions::from_mode(0o700))?;
+                }
+                _ => panic!("no good, bruh"),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn restore(&mut self, hash: &Hash) -> io::Result<()> {
+        let dir = self.base_dir.clone();
+        self.restore_inner(hash, &dir, 0)
     }
 }
 

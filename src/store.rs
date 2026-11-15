@@ -78,7 +78,7 @@ impl<'a, R: Read> Iterator for ObjectIter<'a, R> {
 }
 
 /// A value in the [Index] map.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Entry {
     /// The 4 byte object info (3 byte size + 1 byte kind).
     pub info: Info,
@@ -125,6 +125,7 @@ impl Entry {
 /// assert_eq!(obj.as_data(), b"hello, world");
 /// assert_eq!(obj.header().kind(), 42)
 /// ```
+#[derive(Debug)]
 pub struct Store {
     file: File,
     map: HashMap<Hash, Entry>,
