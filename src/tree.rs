@@ -1,7 +1,7 @@
-use crate::{DIGEST, Hash, MutObject, Object, Store, create_for_append};
+use crate::{DIGEST, HEADER, Hash, MutObject, Object, Store, create_for_append, finalize_object};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
@@ -87,11 +87,11 @@ fn decode_name(reader: &mut ObjectReader) -> Result<String, TreeError> {
 
 fn decode_symlink(reader: &mut ObjectReader) -> Result<Vec<String>, TreeError> {
     let count = minus_one_decode(reader.take(1)?[0]);
-    let mut symlink = Vec::with_capacity(count);
+    let mut names = Vec::with_capacity(count);
     for _ in 0..count {
-        symlink.push(decode_name(reader)?);
+        names.push(decode_name(reader)?);
     }
-    Ok(symlink)
+    Ok(names)
 }
 
 fn decode_hash(reader: &mut ObjectReader) -> Result<Hash, TreeError> {
@@ -147,8 +147,8 @@ fn encode_item(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
                 Err(_) => return Err(TreeError::DirCapacityExceeded),
             }
         }
-        Item::SymLink(symlink) => {
-            encode_symlink(symlink, obj)?;
+        Item::SymLink(names) => {
+            encode_symlink(names, obj)?;
         }
     }
     Ok(())
@@ -262,21 +262,19 @@ impl Directory {
 #[derive(Debug)]
 pub struct Tree {
     store: Store,
-    base_dir: PathBuf,
     buf: Vec<u8>,
 }
 
 impl Tree {
-    pub fn new(store: Store, base_dir: PathBuf) -> Self {
+    pub fn new(store: Store) -> Self {
         Self {
             store,
-            base_dir,
             buf: Vec::new(),
         }
     }
 
-    pub fn into_store_root(self) -> (Store, PathBuf) {
-        (self.store, self.base_dir)
+    pub fn into_store(self) -> Store {
+        self.store
     }
 
     fn restore_file(&mut self, hash: &Hash, path: &Path) -> io::Result<File> {
@@ -354,17 +352,67 @@ impl Tree {
                 Item::ExeFile(sub_hash) => {
                     self.restore_executable_file(&sub_hash, &sub_path)?;
                 }
-                Item::SymLink(symlink) => {
-                    self.restore_symlink(&symlink, &sub_path)?;
+                Item::SymLink(names) => {
+                    self.restore_symlink(&names, &sub_path)?;
                 }
             }
         }
         Ok(())
     }
 
-    pub fn restore(&mut self, hash: &Hash) -> io::Result<()> {
-        let dir = self.base_dir.clone();
-        self.restore_inner(hash, &dir, 0)
+    pub fn restore(&mut self, hash: &Hash, dir: &Path) -> io::Result<()> {
+        self.restore_inner(hash, dir, 0)
+    }
+
+    pub fn snapshot_inner(&mut self, dir: &Path, depth: usize) -> io::Result<Item> {
+        if depth >= 32 {
+            panic!("max tree depth");
+        }
+        let mut directory = Directory::new();
+        for result in fs::read_dir(dir)? {
+            let entry = result?;
+            let metadata = entry.metadata()?;
+            let name = entry.file_name().to_str().unwrap().to_string();
+            println!("{:?}", entry.path());
+            let item = if metadata.is_symlink() {
+                let pb = fs::read_link(entry.path())?;
+                let mut target = Vec::new();
+                for p in &pb {
+                    target.push(p.to_str().unwrap().to_string());
+                }
+                Item::SymLink(target)
+            } else if metadata.is_file() {
+                match metadata.len() {
+                    0 => Item::EmptyFile,
+                    n => {
+                        self.buf.resize(HEADER + n as usize, 0);
+                        let mut file = File::options().read(true).open(entry.path())?;
+                        file.read_exact(&mut self.buf[HEADER..])?;
+                        let obj = finalize_object(1, &mut self.buf).unwrap();
+                        self.store.save(&obj)?;
+                        Item::File(*obj.header().hash())
+                    }
+                }
+            } else if metadata.is_dir() {
+                self.snapshot_inner(&entry.path(), depth + 1)?
+            } else {
+                panic!("oh, shit!");
+            };
+            directory.insert(name, item).unwrap();
+        }
+        if directory.as_map().is_empty() {
+            Ok(Item::EmptyDir)
+        } else {
+            let mut obj = MutObject::new(3, &mut self.buf);
+            directory.serialize_into(&mut obj).unwrap();
+            let obj = obj.finalize().unwrap();
+            self.store.save(&obj)?;
+            Ok(Item::Dir(*obj.header().hash()))
+        }
+    }
+
+    pub fn snapshot(&mut self, dir: &Path) -> io::Result<Item> {
+        self.snapshot_inner(dir, 0)
     }
 }
 
