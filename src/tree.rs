@@ -1,4 +1,6 @@
-use crate::{DIGEST, HEADER, Hash, MutObject, Object, Store, create_for_append, finalize_object};
+use crate::{
+    DIGEST, HEADER, Hash, Kind, MutObject, Object, Store, create_for_append, finalize_object,
+};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
@@ -22,6 +24,7 @@ pub enum TreeError {
     DataNotAvailable(usize, usize),
     DataNotConsumed(usize),
     ObjectNotFound(Hash),
+    ObjectKind(Kind, u8),
 }
 
 impl TreeError {
@@ -199,6 +202,53 @@ impl<'a> ObjectReader<'a> {
             Ok(())
         } else {
             Err(TreeError::DataNotConsumed(self.buf.len()))
+        }
+    }
+}
+
+pub struct BigData {
+    leaves: Vec<Hash>,
+}
+
+impl BigData {
+    pub fn new() -> Self {
+        Self { leaves: Vec::new() }
+    }
+
+    pub fn push(&mut self, hash: Hash) {
+        self.leaves.push(hash);
+    }
+
+    pub fn serialize_into(&self, obj: &mut MutObject) -> Result<(), TreeError> {
+        if self.leaves.is_empty() {
+            Err(TreeError::EmptyDirectory)
+        } else {
+            for hash in &self.leaves {
+                obj.try_extend_from_slice(hash.as_bytes()).unwrap();
+            }
+            Ok(())
+        }
+    }
+
+    pub fn finalize_into(self, buf: &mut Vec<u8>) -> Result<Object, TreeError> {
+        let mut obj = MutObject::new(Kind::BigData as u8, buf);
+        self.serialize_into(&mut obj)?;
+        Ok(obj.finalize().unwrap())
+    }
+
+    pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
+        match obj.header().try_kind() {
+            Ok(Kind::BigData) => {
+                let mut big_data = Self::new();
+                let mut reader = ObjectReader::new(obj);
+                while !reader.is_empty() {
+                    big_data.push(decode_hash(&mut reader)?);
+                }
+                reader.finish()?;
+                Ok(big_data)
+            }
+            Ok(kind) => Err(TreeError::ObjectKind(Kind::BigData, kind as u8)),
+            Err(kind_err) => Err(TreeError::ObjectKind(Kind::BigData, kind_err.0)),
         }
     }
 }

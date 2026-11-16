@@ -1,5 +1,4 @@
-use crate::Hash;
-use crate::always::*;
+use crate::{Hash, Kind, KindError, always::*};
 use std::io;
 
 /// Error returned when building and validating objects.
@@ -185,6 +184,11 @@ impl ObjectHeader {
     /// Object kind (extracted from info field).
     pub fn kind(&self) -> u8 {
         self.info.kind()
+    }
+
+    /// Convert to Kind
+    pub fn try_kind(&self) -> Result<Kind, KindError> {
+        Kind::try_from(self.info.kind())
     }
 
     /// Consume instance, returning hash.
