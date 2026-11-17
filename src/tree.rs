@@ -1,3 +1,5 @@
+// See https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+
 use crate::{
     DATA_MAX_LEN, DIGEST, HEADER, Hash, Kind, KindError, MutObject, Object, Store,
     create_for_append, finalize_object,
@@ -320,12 +322,12 @@ impl Directory {
 
 /// Save/restore directory on a filesystem
 #[derive(Debug)]
-pub struct Tree {
+pub struct Repository {
     store: Store,
     buf: Vec<u8>,
 }
 
-impl Tree {
+impl Repository {
     pub fn new(store: Store) -> Self {
         Self {
             store,
@@ -453,9 +455,6 @@ impl Tree {
             let entry = result?;
             let metadata = entry.metadata()?;
             let name = entry.file_name().to_str().unwrap().to_string();
-            if entry.path() == PathBuf::from("/usr/share/chrony") {
-                continue;
-            }
             let item = if metadata.is_symlink() {
                 let pb = fs::read_link(entry.path())?;
                 let mut target = Vec::new();

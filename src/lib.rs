@@ -64,4 +64,4 @@ pub use hashing::{Hash, HexError, Zbase32Error};
 pub use kinds::{Kind, KindError};
 pub use object::{Info, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
-pub use tree::{Directory, Item, ObjectReader, Tree, TreeError};
+pub use tree::{Directory, Item, ObjectReader, Repository, TreeError};
