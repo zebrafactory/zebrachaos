@@ -130,6 +130,7 @@ pub struct Store {
     file: File,
     map: HashMap<Hash, Entry>,
     offset: u64,
+    data_total: u64,
 }
 
 impl Store {
@@ -138,6 +139,7 @@ impl Store {
             file,
             map: HashMap::new(),
             offset: 0,
+            data_total: 0,
         }
     }
 
@@ -171,9 +173,24 @@ impl Store {
             let header = result?;
             let entry = Entry::new(header.info(), self.offset);
             self.offset += header.buf_len() as u64;
+            self.data_total += header.data_len() as u64;
             self.map.insert(header.into_hash(), entry);
         }
         Ok(())
+    }
+
+    pub fn count(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn data_total(&self) -> u64 {
+        let data_total = self.offset - (self.map.len() * HEADER) as u64;
+        assert_eq!(data_total, self.data_total);
+        data_total
+    }
+
+    pub fn total(&self) -> u64 {
+        self.offset
     }
 
     /// Determin if object with `hash` is present in this [Store].
@@ -181,7 +198,7 @@ impl Store {
         self.map.contains_key(hash)
     }
 
-    /// Write object to file if not already present, but do not double check existing object.
+    /// Write object to file if not already present in map.
     ///
     /// If the object's hash is already in the internal `HashMap`, this method does nothing.
     /// The updside is performance. The downside is this method does not double check that the
@@ -194,6 +211,7 @@ impl Store {
             let entry = Entry::new(obj.header().info(), self.offset);
             self.map.insert(*obj.header().hash(), entry);
             self.offset += obj.as_buf().len() as u64;
+            self.data_total += obj.as_data().len() as u64;
             Ok(true)
         }
     }
@@ -211,13 +229,7 @@ impl Store {
                     Err(obj_err) => Err(obj_err.into_io_error()),
                 }
             }
-            None => {
-                self.file.write_all(obj.as_buf())?;
-                let entry = Entry::new(obj.header().info(), self.offset);
-                self.map.insert(*obj.header().hash(), entry);
-                self.offset += obj.as_buf().len() as u64;
-                Ok(true)
-            }
+            None => self.save(obj),
         }
     }
 
