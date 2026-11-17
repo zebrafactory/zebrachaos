@@ -235,7 +235,7 @@ impl BigData {
         }
     }
 
-    pub fn finalize_into(self, buf: &mut Vec<u8>) -> Result<Object, TreeError> {
+    pub fn finalize_into<'a>(self, buf: &'a mut Vec<u8>) -> Result<Object<'a>, TreeError> {
         let mut obj = MutObject::new(Kind::BigData as u8, buf);
         self.serialize_into(&mut obj)?;
         Ok(obj.finalize().unwrap())
@@ -299,7 +299,7 @@ impl Directory {
         }
     }
 
-    pub fn finalize_into(self, buf: &mut Vec<u8>) -> Result<Object, TreeError> {
+    pub fn finalize_into<'a>(self, buf: &'a mut Vec<u8>) -> Result<Object<'a>, TreeError> {
         let mut obj = MutObject::new(Kind::Directory as u8, buf);
         self.serialize_into(&mut obj)?;
         Ok(obj.finalize().unwrap())

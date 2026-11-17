@@ -193,7 +193,7 @@ impl ObjectHeader {
 
     pub fn check_kind(&self, kind: Kind) -> Result<(), KindError> {
         match self.try_kind() {
-            Ok(kind) => Ok(()),
+            Ok(k) if k == kind => Ok(()),
             Ok(other) => Err(KindError(other as u8)),
             Err(err) => Err(err),
         }
