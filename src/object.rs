@@ -191,6 +191,14 @@ impl ObjectHeader {
         Kind::try_from(self.info.kind())
     }
 
+    pub fn check_kind(&self, kind: Kind) -> Result<(), KindError> {
+        match self.try_kind() {
+            Ok(kind) => Ok(()),
+            Ok(other) => Err(KindError(other as u8)),
+            Err(err) => Err(err),
+        }
+    }
+
     /// Consume instance, returning hash.
     pub fn into_hash(self) -> Hash {
         self.hash
@@ -236,7 +244,7 @@ impl<'a> Object<'a> {
         header.validate_object(buf)
     }
 
-    /// Internally validate object in `buf` and unsure its hash in-buffer matches `hash`.
+    /// Internally validate object in `buf` and ensure its hash in-buffer matches `hash`.
     pub fn validate_with_expected_hash(buf: &'a [u8], hash: &Hash) -> Result<Self, ObjectError> {
         let header = ObjectHeader::read_from_buf(buf)?;
         header.validate_object_with_expected_hash(buf, hash)
@@ -332,7 +340,7 @@ impl<'a> MutObject<'a> {
         if data.is_empty() {
             Err(ObjectError::DataLenBounds)
         } else {
-            let n = std::cmp::min(data.len(), self.remaining());
+            let n = core::cmp::min(data.len(), self.remaining());
             self.buf.extend_from_slice(&data[..n]);
             Ok(n)
         }

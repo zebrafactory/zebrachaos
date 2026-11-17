@@ -1,5 +1,6 @@
 use crate::{
-    DIGEST, HEADER, Hash, Kind, MutObject, Object, Store, create_for_append, finalize_object,
+    DATA_MAX_LEN, DIGEST, HEADER, Hash, Kind, KindError, MutObject, Object, Store,
+    create_for_append, finalize_object,
 };
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -24,7 +25,7 @@ pub enum TreeError {
     DataNotAvailable(usize, usize),
     DataNotConsumed(usize),
     ObjectNotFound(Hash),
-    ObjectKind(Kind, u8),
+    ObjectKind(KindError),
 }
 
 impl TreeError {
@@ -215,6 +216,10 @@ impl BigData {
         Self { leaves: Vec::new() }
     }
 
+    pub fn as_vec(&self) -> &Vec<Hash> {
+        &self.leaves
+    }
+
     pub fn push(&mut self, hash: Hash) {
         self.leaves.push(hash);
     }
@@ -237,8 +242,8 @@ impl BigData {
     }
 
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
-        match obj.header().try_kind() {
-            Ok(Kind::BigData) => {
+        match obj.header().check_kind(Kind::BigData) {
+            Ok(_) => {
                 let mut big_data = Self::new();
                 let mut reader = ObjectReader::new(obj);
                 while !reader.is_empty() {
@@ -247,8 +252,7 @@ impl BigData {
                 reader.finish()?;
                 Ok(big_data)
             }
-            Ok(kind) => Err(TreeError::ObjectKind(Kind::BigData, kind as u8)),
-            Err(kind_err) => Err(TreeError::ObjectKind(Kind::BigData, kind_err.0)),
+            Err(kind_err) => Err(TreeError::ObjectKind(kind_err)),
         }
     }
 }
@@ -295,6 +299,12 @@ impl Directory {
         }
     }
 
+    pub fn finalize_into(self, buf: &mut Vec<u8>) -> Result<Object, TreeError> {
+        let mut obj = MutObject::new(Kind::Directory as u8, buf);
+        self.serialize_into(&mut obj)?;
+        Ok(obj.finalize().unwrap())
+    }
+
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
         let mut directory = Directory::new();
         let mut reader = ObjectReader::new(obj);
@@ -331,8 +341,28 @@ impl Tree {
         if let Some(result) = self.store.load(hash, &mut self.buf) {
             let obj = result?;
             let mut file = create_for_append(path)?;
-            file.write_all(obj.as_data())?;
-            Ok(file)
+            match obj.header().try_kind() {
+                Ok(Kind::Data) => {
+                    file.write_all(obj.as_data())?;
+                    Ok(file)
+                }
+                Ok(Kind::BigData) => {
+                    let big_data = match BigData::deserialize_from(&obj) {
+                        Ok(big_data) => big_data,
+                        Err(tree_err) => return Err(tree_err.into_io_error()),
+                    };
+                    for leaf_hash in big_data.as_vec() {
+                        if let Some(result) = self.store.load(leaf_hash, &mut self.buf) {
+                            let obj = result?;
+                            file.write_all(obj.as_data())?;
+                        } else {
+                            return Err(TreeError::ObjectNotFound(*leaf_hash).into_io_error());
+                        }
+                    }
+                    Ok(file)
+                }
+                _ => panic!("oh no"),
+            }
         } else {
             Err(TreeError::ObjectNotFound(*hash).into_io_error())
         }
@@ -423,7 +453,9 @@ impl Tree {
             let entry = result?;
             let metadata = entry.metadata()?;
             let name = entry.file_name().to_str().unwrap().to_string();
-            println!("{:?}", entry.path());
+            if entry.path() == PathBuf::from("/usr/share/chrony") {
+                continue;
+            }
             let item = if metadata.is_symlink() {
                 let pb = fs::read_link(entry.path())?;
                 let mut target = Vec::new();
@@ -434,11 +466,29 @@ impl Tree {
             } else if metadata.is_file() {
                 match metadata.len() {
                     0 => Item::EmptyFile,
+                    n if n > DATA_MAX_LEN as u64 => {
+                        let mut file = File::options().read(true).open(entry.path())?;
+                        let mut big_data = BigData::new();
+                        let mut remaining = n;
+                        while remaining > 0 {
+                            let amount = core::cmp::min(remaining, DATA_MAX_LEN as u64);
+                            remaining -= amount;
+                            self.buf.resize(HEADER + amount as usize, 0);
+                            file.read_exact(&mut self.buf[HEADER..])?;
+                            let obj = finalize_object(Kind::Data as u8, &mut self.buf).unwrap();
+                            self.store.save(&obj)?;
+                            let hash = *obj.header().hash();
+                            big_data.push(hash);
+                        }
+                        let obj = big_data.finalize_into(&mut self.buf).unwrap();
+                        self.store.save(&obj)?;
+                        Item::File(*obj.header().hash())
+                    }
                     n => {
                         self.buf.resize(HEADER + n as usize, 0);
                         let mut file = File::options().read(true).open(entry.path())?;
                         file.read_exact(&mut self.buf[HEADER..])?;
-                        let obj = finalize_object(1, &mut self.buf).unwrap();
+                        let obj = finalize_object(Kind::Data as u8, &mut self.buf).unwrap();
                         self.store.save(&obj)?;
                         Item::File(*obj.header().hash())
                     }
@@ -453,9 +503,7 @@ impl Tree {
         if directory.as_map().is_empty() {
             Ok(Item::EmptyDir)
         } else {
-            let mut obj = MutObject::new(3, &mut self.buf);
-            directory.serialize_into(&mut obj).unwrap();
-            let obj = obj.finalize().unwrap();
+            let obj = directory.finalize_into(&mut self.buf).unwrap();
             self.store.save(&obj)?;
             Ok(Item::Dir(*obj.header().hash()))
         }

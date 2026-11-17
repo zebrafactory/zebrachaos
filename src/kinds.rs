@@ -3,7 +3,7 @@ pub enum Kind {
     Control,
     Data,
     BigData,
-    Dir,
+    Directory,
 }
 
 #[derive(Debug, PartialEq)]

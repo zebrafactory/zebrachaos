@@ -9,11 +9,11 @@ fn main() -> std::io::Result<()> {
     let mut tree = Tree::new(Store::create(&filename)?);
     println!("created store in {:?}", tmp.path());
 
-    let input = std::path::PathBuf::from("/usr/share/doc");
+    let input = std::path::PathBuf::from("/usr/share");
     if let Item::Dir(hash) = tree.snapshot(&input)? {
         println!("{hash}");
         let output = tempfile::TempDir::new()?;
-        tree.restore(&hash, output.path());
+        tree.restore(&hash, output.path())?;
         if let Item::Dir(hash2) = tree.snapshot(&output.path())? {
             assert_eq!(hash, hash2);
             println!("{hash2}");
