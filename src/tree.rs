@@ -308,15 +308,20 @@ impl Directory {
     }
 
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
-        let mut directory = Directory::new();
-        let mut reader = ObjectReader::new(obj);
-        while !reader.is_empty() {
-            let name = decode_name(&mut reader)?;
-            let item = decode_item(&mut reader)?;
-            directory.insert(name, item)?;
+        match obj.header().check_kind(Kind::Directory) {
+            Ok(_) => {
+                let mut directory = Directory::new();
+                let mut reader = ObjectReader::new(obj);
+                while !reader.is_empty() {
+                    let name = decode_name(&mut reader)?;
+                    let item = decode_item(&mut reader)?;
+                    directory.insert(name, item)?;
+                }
+                reader.finish()?;
+                Ok(directory)
+            }
+            Err(kind_err) => Err(TreeError::ObjectKind(kind_err)),
         }
-        reader.finish()?;
-        Ok(directory)
     }
 }
 
