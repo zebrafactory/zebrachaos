@@ -1,4 +1,4 @@
-use crate::{Hash, Kind, KindError, always::*};
+use crate::{Hash, always::*};
 use std::io;
 
 /// Error returned when building and validating objects.
@@ -24,6 +24,9 @@ pub enum ObjectError {
 
     /// Hash in framing header does not match hash in index.
     Hash,
+
+    /// Invalid Kind
+    Kind(u8),
 }
 
 impl ObjectError {
@@ -40,6 +43,28 @@ impl core::fmt::Display for ObjectError {
 }
 
 impl std::error::Error for ObjectError {}
+
+#[derive(Debug, PartialEq)]
+pub enum Kind {
+    Control,
+    Data,
+    BigData,
+    Directory,
+}
+
+impl TryFrom<u8> for Kind {
+    type Error = ObjectError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Control),
+            1 => Ok(Self::Data),
+            2 => Ok(Self::BigData),
+            3 => Ok(Self::Directory),
+            _ => Err(ObjectError::Kind(value)),
+        }
+    }
+}
 
 /// Stores object size and kind.
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -187,14 +212,14 @@ impl ObjectHeader {
     }
 
     /// Convert to Kind
-    pub fn try_kind(&self) -> Result<Kind, KindError> {
+    pub fn try_kind(&self) -> Result<Kind, ObjectError> {
         Kind::try_from(self.info.kind())
     }
 
-    pub fn check_kind(&self, kind: Kind) -> Result<(), KindError> {
+    pub fn check_kind(&self, kind: Kind) -> Result<(), ObjectError> {
         match self.try_kind() {
             Ok(k) if k == kind => Ok(()),
-            Ok(other) => Err(KindError(other as u8)),
+            Ok(other) => Err(ObjectError::Kind(other as u8)),
             Err(err) => Err(err),
         }
     }

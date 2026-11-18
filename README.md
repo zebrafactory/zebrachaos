@@ -13,6 +13,18 @@ improve the security of software build and delivery systems.
 See the [Quickstart](https://docs.rs/zf-zebrachaos/latest/zf_zebrachaos/#-quickstart) for an overview of the
 current storage API.
 
+Compared to Git, ZebraChaos does a few things differently:
+
+* Empty objects are not stored, regardless of type
+
+* Empty files are only stored in the `Tree` object, represented by the `Item::EmptyFile` type
+
+* Empty directories are likewise stored in the `Tree` object, represented by the `Item::EmptyDir` type
+
+* Empty directories can be represented without a placeholder file inside them
+
+* The maximum "physical" blob size is is 16 MiB (max unit of verification), but larger logical blobs are put into a tree with 16 MiB leaves
+
 ## Roadmap
 
 * MVP for saving/loading objects, and encoding/decoding filesystem trees

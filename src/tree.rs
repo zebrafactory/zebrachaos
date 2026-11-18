@@ -1,7 +1,7 @@
 // See https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 
 use crate::{
-    DATA_MAX_LEN, DIGEST, HEADER, Hash, Kind, KindError, MutObject, Object, Store,
+    DATA_MAX_LEN, DIGEST, HEADER, Hash, Kind, MutObject, Object, ObjectError, Store,
     create_for_append, finalize_object,
 };
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ pub enum TreeError {
     DataNotAvailable(usize, usize),
     DataNotConsumed(usize),
     ObjectNotFound(Hash),
-    ObjectKind(KindError),
+    ObjectError(ObjectError),
 }
 
 impl TreeError {
@@ -254,7 +254,7 @@ impl BigData {
                 reader.finish()?;
                 Ok(big_data)
             }
-            Err(kind_err) => Err(TreeError::ObjectKind(kind_err)),
+            Err(obj_err) => Err(TreeError::ObjectError(obj_err)),
         }
     }
 }
@@ -320,7 +320,7 @@ impl Directory {
                 reader.finish()?;
                 Ok(directory)
             }
-            Err(kind_err) => Err(TreeError::ObjectKind(kind_err)),
+            Err(obj_err) => Err(TreeError::ObjectError(obj_err)),
         }
     }
 }

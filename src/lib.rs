@@ -18,7 +18,7 @@
 //!
 //! ```
 //! use tempfile;
-//! use zf_zebrachaos::{MutObject, Store};
+//! use zf_zebrachaos::{Kind, MutObject, Store};
 //!
 //! let tmpdir = tempfile::TempDir::new().unwrap();
 //! let filename = tmpdir.path().join("chaos.data");
@@ -27,7 +27,7 @@
 //! let hash = {
 //!    // Create a store and save our first object:
 //!    let mut store = Store::create(&filename).unwrap();
-//!    let mut obj = MutObject::new(42, &mut buf);
+//!    let mut obj = MutObject::new(Kind::Data as u8, &mut buf);
 //!    obj.try_extend_from_slice(b"hello, world").unwrap();
 //!    let obj = obj.finalize().unwrap();
 //!    assert!(store.save(&obj).unwrap());
@@ -41,13 +41,12 @@
 //! let mut store = Store::open(&filename).unwrap();
 //! let obj = store.load(&hash, &mut buf).unwrap().unwrap();
 //! assert_eq!(obj.as_data(), b"hello, world");
-//! assert_eq!(obj.header().kind(), 42)
+//! assert_eq!(obj.header().try_kind().unwrap(), Kind::Data);
 //! ```
 
 mod always;
 mod fsutil;
 mod hashing;
-mod kinds;
 mod object;
 mod store;
 mod tree;
@@ -61,7 +60,6 @@ pub use always::{
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};
-pub use kinds::{Kind, KindError};
-pub use object::{Info, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
+pub use object::{Info, Kind, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
 pub use tree::{Directory, Item, ObjectReader, Repository, TreeError};

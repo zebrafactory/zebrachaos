@@ -1,5 +1,6 @@
 use crate::{
-    HEADER, Hash, Info, Object, ObjectHeader, create_for_append, open_for_append, read_exact_at,
+    HEADER, Hash, Info, Kind, Object, ObjectHeader, create_for_append, open_for_append,
+    read_exact_at,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -246,6 +247,21 @@ impl Store {
                     Err(err) => Some(Err(err)),
                 }
             }
+            None => None,
+        }
+    }
+
+    /// Load object into buffer, error if kind does not match expectation.
+    pub fn load_kind<'a>(
+        &self,
+        hash: &Hash,
+        buf: &'a mut Vec<u8>,
+    ) -> Option<io::Result<Object<'a>>> {
+        match self.load(hash, buf) {
+            Some(result) => match result {
+                Ok(obj) => Some(Ok(obj)),
+                Err(err) => Some(Err(err)),
+            },
             None => None,
         }
     }

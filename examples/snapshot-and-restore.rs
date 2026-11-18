@@ -10,7 +10,7 @@ fn main() -> std::io::Result<()> {
 
     println!("created store in {filename:?}");
 
-    let input = std::path::PathBuf::from("/home/json420/Downloads");
+    let input = std::path::PathBuf::from("/usr/share/doc");
     if let Item::Dir(hash) = repository.snapshot(&input)? {
         println!("{hash}");
         let output = tempfile::TempDir::new()?;
