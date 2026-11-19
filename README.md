@@ -23,21 +23,22 @@ Compared to Git, ZebraChaos does a few things differently:
 
 * Empty directories can be represented without a placeholder file inside them
 
-* The maximum "physical" blob size is is 16 MiB (max unit of verification), but larger logical blobs are put into a tree with 16 MiB leaves
+* The maximum "physical" blob size is is 16 MiB (max unit of verification), but larger logical blobs are put into a tree with 16 MiB leaves;
+this means arbitrarily large files can be addressed while maintaining a 16 MiB max unix of verifaciton
 
 ## Roadmap
 
-* MVP for saving/loading objects, and encoding/decoding filesystem trees
+- [ ] MVP for saving/loading objects, and encoding/decoding filesystem trees
 
-* FUSE driver for mounting by hash a read-only, verify-on-read file system
+- [ ] FUSE driver for mounting by hash a read-only, verify-on-read file system
 
-* Make ZebraChaos `#![no_std]` compatible (with crate feature)
+- [ ] Make ZebraChaos `#![no_std]` compatible (with crate feature)
 
-* Rust for Linux kernel driver for mounting by hash a read-only, verify-on-read file system
+- [ ] Rust for Linux kernel driver for mounting by hash a read-only, verify-on-read file system
 
-* Read-write capable FUSE driver
+- [ ] Read-write capable FUSE driver
 
-* Read-write capable Rust for Linux kernel driver
+- [ ] Read-write capable Rust for Linux kernel driver
 
 
 ## 📜 License

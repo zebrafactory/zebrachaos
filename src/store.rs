@@ -254,12 +254,16 @@ impl Store {
     /// Load object into buffer, error if kind does not match expectation.
     pub fn load_kind<'a>(
         &self,
+        kind: Kind,
         hash: &Hash,
         buf: &'a mut Vec<u8>,
     ) -> Option<io::Result<Object<'a>>> {
         match self.load(hash, buf) {
             Some(result) => match result {
-                Ok(obj) => Some(Ok(obj)),
+                Ok(obj) => match obj.header().check_kind(kind) {
+                    Ok(_) => Some(Ok(obj)),
+                    Err(obj_err) => Some(Err(obj_err.into_io_error())),
+                },
                 Err(err) => Some(Err(err)),
             },
             None => None,
