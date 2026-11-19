@@ -45,6 +45,12 @@ impl core::fmt::Display for TreeError {
 
 impl core::error::Error for TreeError {}
 
+impl From<ObjectError> for TreeError {
+    fn from(obj_err: ObjectError) -> Self {
+        Self::ObjectError(obj_err)
+    }
+}
+
 /// Value in the directory map.
 #[derive(Debug, PartialEq)]
 pub enum Item {
@@ -254,7 +260,7 @@ impl BigData {
                 reader.finish()?;
                 Ok(big_data)
             }
-            Err(obj_err) => Err(TreeError::ObjectError(obj_err)),
+            Err(obj_err) => Err(obj_err.into()),
         }
     }
 }
@@ -320,7 +326,7 @@ impl Directory {
                 reader.finish()?;
                 Ok(directory)
             }
-            Err(obj_err) => Err(TreeError::ObjectError(obj_err)),
+            Err(obj_err) => Err(obj_err.into()),
         }
     }
 }
