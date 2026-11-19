@@ -15,6 +15,8 @@ use std::{
     os::unix::fs::{PermissionsExt, symlink},
 };
 
+const MAX_TREE_DEPTH: usize = 32;
+
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
     NameLenBounds(usize),
@@ -28,6 +30,7 @@ pub enum TreeError {
     DataNotConsumed(usize),
     ObjectNotFound(Hash),
     ObjectError(ObjectError),
+    TreeDepth(usize),
 }
 
 impl TreeError {
@@ -159,8 +162,8 @@ fn encode_item(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
                 Err(_) => return Err(TreeError::DirCapacityExceeded),
             }
         }
-        Item::SymLink(names) => {
-            encode_symlink(names, obj)?;
+        Item::SymLink(target) => {
+            encode_symlink(target, obj)?;
         }
     }
     Ok(())
@@ -422,8 +425,8 @@ impl Repository {
     }
 
     fn restore_inner(&mut self, hash: &Hash, path: &Path, depth: usize) -> io::Result<()> {
-        if depth >= 32 {
-            panic!("max tree depth");
+        if depth >= MAX_TREE_DEPTH {
+            return Err(TreeError::TreeDepth(depth).into_io_error());
         }
         let dir = self.load_directory(hash)?;
         for (name, item) in dir.as_map() {
@@ -445,8 +448,8 @@ impl Repository {
                 Item::ExeFile(sub_hash) => {
                     self.restore_executable_file(&sub_hash, &sub_path)?;
                 }
-                Item::SymLink(names) => {
-                    self.restore_symlink(&names, &sub_path)?;
+                Item::SymLink(target) => {
+                    self.restore_symlink(&target, &sub_path)?;
                 }
             }
         }
@@ -458,8 +461,8 @@ impl Repository {
     }
 
     pub fn snapshot_inner(&mut self, dir: &Path, depth: usize) -> io::Result<Item> {
-        if depth >= 32 {
-            panic!("max tree depth");
+        if depth >= MAX_TREE_DEPTH {
+            return Err(TreeError::TreeDepth(depth).into_io_error());
         }
         let mut directory = Directory::new();
         for result in fs::read_dir(dir)? {
@@ -1012,5 +1015,33 @@ mod tests {
                 b"\x08REAMDE.md\x01\x02foo\x05\x00\x03bars\x02src\x00"
             );
         }
+    }
+
+    #[test]
+    fn test_repository_max_depth() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let filename = tmp.path().join("chaos.data");
+        let mut repo = Repository::new(Store::create(&filename).unwrap());
+        let hash = random_hash();
+        let path = tmp.path().join("foo.bar");
+        let too_big = MAX_TREE_DEPTH + 1;
+        assert_eq!(
+            repo.restore_inner(&hash, &path, too_big)
+                .unwrap_err()
+                .into_inner()
+                .unwrap()
+                .downcast()
+                .unwrap(),
+            Box::new(TreeError::TreeDepth(too_big))
+        );
+        assert_eq!(
+            repo.snapshot_inner(&path, too_big)
+                .unwrap_err()
+                .into_inner()
+                .unwrap()
+                .downcast()
+                .unwrap(),
+            Box::new(TreeError::TreeDepth(too_big))
+        );
     }
 }
