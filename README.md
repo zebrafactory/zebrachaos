@@ -15,11 +15,11 @@ current storage API.
 
 Compared to Git, ZebraChaos does a few things differently:
 
-* Empty objects are not stored, regardless of type
+* Empty objects are not stored, regardless of type (i.e., a valid object always has at least 1 byte of data)
 
-* Empty files are only stored in the `Tree` object, represented by the `Item::EmptyFile` type
+* Empty files are only stored in `Tree` objects, represented by the `Item::EmptyFile` variant
 
-* Empty directories are likewise stored in the `Tree` object, represented by the `Item::EmptyTree` type
+* Empty directories are likewise only stored in `Tree` objects, represented by the `Item::EmptyTree` variant
 
 * Empty directories can be represented without a placeholder file inside them
 

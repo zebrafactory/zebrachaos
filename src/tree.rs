@@ -410,12 +410,16 @@ impl Repository {
                     Ok(file)
                 }
                 Ok(Kind::MegaData) => {
-                    let big_data = match MegaData::deserialize_from(&obj) {
-                        Ok(big_data) => big_data,
+                    let mega_data = match MegaData::deserialize_from(&obj) {
+                        Ok(mega_data) => mega_data,
                         Err(tree_err) => return Err(tree_err.into_io_error()),
                     };
-                    for leaf_hash in big_data.as_vec() {
-                        if let Some(result) = self.store.load(leaf_hash, &mut self.buf) {
+                    for leaf_hash in mega_data.as_vec() {
+                        // FIXME: probably should add a depth counter to MegaData. Also, currently we only
+                        // support MegaData trees 1-deep.
+                        if let Some(result) =
+                            self.store.load_kind(Kind::Data, leaf_hash, &mut self.buf)
+                        {
                             let obj = result?;
                             file.write_all(obj.as_data())?;
                         } else {
@@ -460,7 +464,7 @@ impl Repository {
     }
 
     fn load_directory(&mut self, hash: &Hash) -> io::Result<Tree> {
-        if let Some(result) = self.store.load(hash, &mut self.buf) {
+        if let Some(result) = self.store.load_kind(Kind::Tree, hash, &mut self.buf) {
             let obj = result?;
             match Tree::deserialize_from(&obj) {
                 Ok(dir) => Ok(dir),
