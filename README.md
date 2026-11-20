@@ -7,8 +7,8 @@
 ZebraChaos is for storing filesystem shapshots as Merkle trees. It's a lot like Git, minus all
 the higher level version control features.
 
-In combitation with [ZebraChain](https://github.com/zebrafactory/zebrachain), ZebraChaos aims to
-improve the security of software build and delivery systems.
+In combination with [ZebraChain](https://github.com/zebrafactory/zebrachain), ZebraChaos aims to
+improve the supply chain security of software build and delivery systems.
 
 See the [Quickstart](https://docs.rs/zf-zebrachaos/latest/zf_zebrachaos/#-quickstart) for an overview of the
 current storage API.

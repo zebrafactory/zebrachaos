@@ -169,6 +169,24 @@ fn encode_item(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
     Ok(())
 }
 
+/// Consume data in an [Object].
+///
+/// # Examples
+///
+/// ```
+/// use zf_zebrachaos::{Kind, MutObject, ObjectReader, TreeError};
+///
+/// let mut buf = Vec::new();
+/// let mut obj = MutObject::new(Kind::Data, &mut buf);
+/// obj.try_extend_from_slice(b"hello, world").unwrap();
+/// let obj = obj.finalize().unwrap();
+/// let mut reader = ObjectReader::new(&obj);
+/// assert!(!reader.is_empty());
+/// assert_eq!(reader.take(12).unwrap(), b"hello, world");
+/// assert!(reader.is_empty());
+/// assert_eq!(reader.take(1).unwrap_err(), TreeError::DataNotAvailable(1, 0));
+/// ```
+#[derive(Debug)]
 pub struct ObjectReader<'a> {
     buf: &'a [u8],
 }
@@ -179,28 +197,35 @@ impl<'a> ObjectReader<'a> {
         Self { buf }
     }
 
+    /// Initialize reader with all of object's data.
+    ///
+    /// As valid objects always have at least 1 byte of data, a new reader never starts empty.
     pub fn new(obj: &'a Object) -> Self {
         Self { buf: obj.as_data() }
     }
 
+    /// Returns `true` if data is fully consumed.
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
     }
 
+    /// Bytes of data remaining.
     pub fn remaining(&self) -> usize {
         self.buf.len()
     }
 
+    /// If available, consume `amount` bytes from buffer.
     pub fn take(&mut self, amount: usize) -> Result<&[u8], TreeError> {
         if self.buf.len() < amount {
             Err(TreeError::DataNotAvailable(amount, self.buf.len()))
         } else {
-            let ret = &self.buf[..amount];
+            let taken = &self.buf[..amount];
             self.buf = &self.buf[amount..];
-            Ok(ret)
+            Ok(taken)
         }
     }
 
+    /// If avialable, peak at next *amount* bytes in buffer, without consuming any bytes.
     pub fn peak(&self, amount: usize) -> Result<&[u8], TreeError> {
         if self.buf.len() < amount {
             Err(TreeError::DataNotAvailable(amount, self.buf.len()))
@@ -209,6 +234,9 @@ impl<'a> ObjectReader<'a> {
         }
     }
 
+    /// Enusre full data was consumed.
+    ///
+    /// Fixme: this shoud perhaps be a Drop trait.
     pub fn finish(self) -> Result<(), TreeError> {
         if self.buf.is_empty() {
             Ok(())
