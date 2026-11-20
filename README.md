@@ -23,8 +23,8 @@ Compared to Git, ZebraChaos does a few things differently:
 
 * Empty directories can be represented without a placeholder file inside them
 
-* The maximum "physical" blob size is is 16 MiB (max unit of verification), but larger logical blobs are put into a tree with 16 MiB leaves;
-this means arbitrarily large files can be addressed while maintaining a 16 MiB max unix of verifaciton
+* The maximum "physical" blob size is 16 MiB (max unit of verification), but larger logical blobs are put into a tree with 16 MiB leaves;
+this means arbitrarily large files can be addressed while maintaining a 16 MiB verification granularity
 
 ## Roadmap
 

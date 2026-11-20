@@ -25,10 +25,10 @@ pub enum ObjectError {
     /// Hash in framing header does not match hash in index.
     Hash,
 
-    /// Invalid Kind
+    /// Invalid Kind.
     Kind(u8),
 
-    /// Kind is what what was called for.
+    /// Kind is not the kind that was called for.
     ExpectedKind(Kind, Kind),
 }
 
@@ -532,6 +532,43 @@ mod tests {
                     .unwrap_err(),
                 ObjectError::Hash
             );
+        }
+    }
+
+    #[test]
+    fn test_objectheader_try_kind() {
+        let mut data = [0; 69];
+        getrandom::fill(&mut data).unwrap();
+        for raw_kind in 0..=255 {
+            let header = ObjectHeader::build(raw_kind, &data).unwrap();
+            assert_eq!(header.try_kind(), Kind::try_from(raw_kind));
+        }
+    }
+
+    #[test]
+    fn test_objectheader_check_kind() {
+        let mut data = [0; 69];
+        getrandom::fill(&mut data).unwrap();
+        let data = data;
+
+        let header = ObjectHeader::build(Kind::Data as u8, &data).unwrap();
+        assert_eq!(header.check_kind(Kind::Data), Ok(()));
+        assert_eq!(
+            header.check_kind(Kind::Control),
+            Err(ObjectError::ExpectedKind(Kind::Control, Kind::Data))
+        );
+        assert_eq!(
+            header.check_kind(Kind::BigData),
+            Err(ObjectError::ExpectedKind(Kind::BigData, Kind::Data))
+        );
+        assert_eq!(
+            header.check_kind(Kind::Directory),
+            Err(ObjectError::ExpectedKind(Kind::Directory, Kind::Data))
+        );
+
+        let header = ObjectHeader::build(69, &data).unwrap();
+        for kind in [Kind::Control, Kind::Data, Kind::BigData, Kind::Directory] {
+            assert_eq!(header.check_kind(kind), Err(ObjectError::Kind(69)));
         }
     }
 
