@@ -11,12 +11,12 @@ fn main() -> std::io::Result<()> {
     println!("created store in {filename:?}");
 
     let input = std::path::PathBuf::from("/usr/share/doc");
-    if let Item::Dir(hash) = repository.snapshot(&input)? {
+    if let Item::Tree(hash) = repository.snapshot(&input)? {
         println!("{hash}");
         let output = tempfile::TempDir::new()?;
         println!("Restoring Tree in {:?}", output.path());
         repository.restore(&hash, output.path())?;
-        if let Item::Dir(hash2) = repository.snapshot(&output.path())? {
+        if let Item::Tree(hash2) = repository.snapshot(&output.path())? {
             assert_eq!(hash, hash2);
             println!("{hash2}");
         }

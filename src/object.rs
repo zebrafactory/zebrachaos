@@ -52,7 +52,7 @@ pub enum Kind {
     Control,
     Data,
     BigData,
-    Directory,
+    Tree,
 }
 
 impl TryFrom<u8> for Kind {
@@ -63,7 +63,7 @@ impl TryFrom<u8> for Kind {
             0 => Ok(Self::Control),
             1 => Ok(Self::Data),
             2 => Ok(Self::BigData),
-            3 => Ok(Self::Directory),
+            3 => Ok(Self::Tree),
             _ => Err(ObjectError::Kind(value)),
         }
     }
@@ -562,12 +562,12 @@ mod tests {
             Err(ObjectError::ExpectedKind(Kind::BigData, Kind::Data))
         );
         assert_eq!(
-            header.check_kind(Kind::Directory),
-            Err(ObjectError::ExpectedKind(Kind::Directory, Kind::Data))
+            header.check_kind(Kind::Tree),
+            Err(ObjectError::ExpectedKind(Kind::Tree, Kind::Data))
         );
 
         let header = ObjectHeader::build(69, &data).unwrap();
-        for kind in [Kind::Control, Kind::Data, Kind::BigData, Kind::Directory] {
+        for kind in [Kind::Control, Kind::Data, Kind::BigData, Kind::Tree] {
             assert_eq!(header.check_kind(kind), Err(ObjectError::Kind(69)));
         }
     }

@@ -69,4 +69,4 @@ pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};
 pub use object::{Info, Kind, MutObject, Object, ObjectError, ObjectHeader, finalize_object};
 pub use store::{ObjectIter, Store};
-pub use tree::{Directory, Item, ObjectReader, Repository, TreeError};
+pub use tree::{Item, ObjectReader, Repository, Tree, TreeError};

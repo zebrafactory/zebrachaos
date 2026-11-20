@@ -19,7 +19,7 @@ Compared to Git, ZebraChaos does a few things differently:
 
 * Empty files are only stored in the `Tree` object, represented by the `Item::EmptyFile` type
 
-* Empty directories are likewise stored in the `Tree` object, represented by the `Item::EmptyDir` type
+* Empty directories are likewise stored in the `Tree` object, represented by the `Item::EmptyTree` type
 
 * Empty directories can be represented without a placeholder file inside them
 

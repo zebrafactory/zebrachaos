@@ -24,8 +24,8 @@ pub enum TreeError {
     BadName(String),
     DuplicateName(String, Item),
     ItemKind(u8),
-    EmptyDirectory,
-    DirCapacityExceeded,
+    EmptyTree,
+    TreeCapacityExceeded,
     DataNotAvailable(usize, usize),
     DataNotConsumed(usize),
     ObjectNotFound(Hash),
@@ -57,9 +57,9 @@ impl From<ObjectError> for TreeError {
 /// Value in the directory map.
 #[derive(Debug, PartialEq)]
 pub enum Item {
-    EmptyDir,
+    EmptyTree,
     EmptyFile,
-    Dir(Hash),
+    Tree(Hash),
     File(Hash),
     ExeFile(Hash),
     SymLink(Vec<String>),
@@ -68,9 +68,9 @@ pub enum Item {
 impl Item {
     pub fn kind_byte(&self) -> u8 {
         match self {
-            Self::EmptyDir => 0,
+            Self::EmptyTree => 0,
             Self::EmptyFile => 1,
-            Self::Dir(_) => 2,
+            Self::Tree(_) => 2,
             Self::File(_) => 3,
             Self::ExeFile(_) => 4,
             Self::SymLink(_) => 5,
@@ -116,9 +116,9 @@ fn decode_hash(reader: &mut ObjectReader) -> Result<Hash, TreeError> {
 fn decode_item(reader: &mut ObjectReader) -> Result<Item, TreeError> {
     let kind = reader.take(1)?[0];
     match kind {
-        0 => Ok(Item::EmptyDir),
+        0 => Ok(Item::EmptyTree),
         1 => Ok(Item::EmptyFile),
-        2 => Ok(Item::Dir(decode_hash(reader)?)),
+        2 => Ok(Item::Tree(decode_hash(reader)?)),
         3 => Ok(Item::File(decode_hash(reader)?)),
         4 => Ok(Item::ExeFile(decode_hash(reader)?)),
         5 => Ok(Item::SymLink(decode_symlink(reader)?)),
@@ -131,7 +131,7 @@ fn encode_name(name: &str, obj: &mut MutObject) -> Result<(), TreeError> {
     for buf in [&[encoded_size], name.as_bytes()] {
         match obj.try_extend_from_slice(buf) {
             Ok(_) => {}
-            Err(_) => return Err(TreeError::DirCapacityExceeded),
+            Err(_) => return Err(TreeError::TreeCapacityExceeded),
         }
     }
     Ok(())
@@ -141,7 +141,7 @@ fn encode_symlink(symlink: &[String], obj: &mut MutObject) -> Result<(), TreeErr
     let encoded_count = minus_one_encode(symlink.len())?;
     match obj.try_extend_from_slice(&[encoded_count]) {
         Ok(_) => {}
-        Err(_) => return Err(TreeError::DirCapacityExceeded),
+        Err(_) => return Err(TreeError::TreeCapacityExceeded),
     }
     for name in symlink {
         encode_name(name, obj)?;
@@ -152,14 +152,14 @@ fn encode_symlink(symlink: &[String], obj: &mut MutObject) -> Result<(), TreeErr
 fn encode_item(item: &Item, obj: &mut MutObject) -> Result<(), TreeError> {
     match obj.try_extend_from_slice(&[item.kind_byte()]) {
         Ok(_) => {}
-        Err(_) => return Err(TreeError::DirCapacityExceeded),
+        Err(_) => return Err(TreeError::TreeCapacityExceeded),
     }
     match item {
-        Item::EmptyDir | Item::EmptyFile => {}
-        Item::Dir(hash) | Item::File(hash) | Item::ExeFile(hash) => {
+        Item::EmptyTree | Item::EmptyFile => {}
+        Item::Tree(hash) | Item::File(hash) | Item::ExeFile(hash) => {
             match obj.try_extend_from_slice(hash.as_bytes()) {
                 Ok(_) => {}
-                Err(_) => return Err(TreeError::DirCapacityExceeded),
+                Err(_) => return Err(TreeError::TreeCapacityExceeded),
             }
         }
         Item::SymLink(target) => {
@@ -265,7 +265,7 @@ impl BigData {
 
     pub fn serialize_into(&self, obj: &mut MutObject) -> Result<(), TreeError> {
         if self.leaves.is_empty() {
-            Err(TreeError::EmptyDirectory)
+            Err(TreeError::EmptyTree)
         } else {
             for hash in &self.leaves {
                 obj.try_extend_from_slice(hash.as_bytes()).unwrap();
@@ -296,18 +296,31 @@ impl BigData {
     }
 }
 
-/// A directory.
-pub struct Directory {
+/// A directory-like map. similar to a Git Tree object.
+///
+/// # Examples
+///
+/// ```
+/// use zf_zebrachaos::{Item, Kind, Tree};
+///
+/// let mut tree = Tree::new();
+/// tree.insert(String::from("README.md"), Item::EmptyFile).unwrap();
+/// tree.insert(String::from("tests"), Item::EmptyTree).unwrap();
+/// let mut buf = Vec::new();
+/// let header = tree.finalize_into(&mut buf).unwrap().into_header();
+/// assert_eq!(header.try_kind().unwrap(), Kind::Tree);
+/// ```
+pub struct Tree {
     map: HashMap<String, Item>,
 }
 
-impl Default for Directory {
+impl Default for Tree {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Directory {
+impl Tree {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -332,7 +345,7 @@ impl Directory {
 
     pub fn serialize_into(&self, obj: &mut MutObject) -> Result<(), TreeError> {
         if self.map.is_empty() {
-            Err(TreeError::EmptyDirectory)
+            Err(TreeError::EmptyTree)
         } else {
             let mut pairs = Vec::from_iter(self.map.iter());
             pairs.sort_by(|a, b| a.0.cmp(b.0));
@@ -345,15 +358,15 @@ impl Directory {
     }
 
     pub fn finalize_into<'a>(self, buf: &'a mut Vec<u8>) -> Result<Object<'a>, TreeError> {
-        let mut obj = MutObject::new(Kind::Directory, buf);
+        let mut obj = MutObject::new(Kind::Tree, buf);
         self.serialize_into(&mut obj)?;
         Ok(obj.finalize().unwrap())
     }
 
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
-        match obj.header().check_kind(Kind::Directory) {
+        match obj.header().check_kind(Kind::Tree) {
             Ok(_) => {
-                let mut directory = Directory::new();
+                let mut directory = Tree::new();
                 let mut reader = ObjectReader::new(obj);
                 while !reader.is_empty() {
                     let name = decode_name(&mut reader)?;
@@ -446,10 +459,10 @@ impl Repository {
         Ok(())
     }
 
-    fn load_directory(&mut self, hash: &Hash) -> io::Result<Directory> {
+    fn load_directory(&mut self, hash: &Hash) -> io::Result<Tree> {
         if let Some(result) = self.store.load(hash, &mut self.buf) {
             let obj = result?;
-            match Directory::deserialize_from(&obj) {
+            match Tree::deserialize_from(&obj) {
                 Ok(dir) => Ok(dir),
                 Err(tree_err) => Err(tree_err.into_io_error()),
             }
@@ -466,13 +479,13 @@ impl Repository {
         for (name, item) in dir.as_map() {
             let sub_path = path.join(name);
             match item {
-                Item::EmptyDir => {
+                Item::EmptyTree => {
                     fs::create_dir(&sub_path)?;
                 }
                 Item::EmptyFile => {
                     create_for_append(&sub_path)?;
                 }
-                Item::Dir(sub_hash) => {
+                Item::Tree(sub_hash) => {
                     fs::create_dir(&sub_path)?;
                     self.restore_inner(sub_hash, &sub_path, depth + 1)?;
                 }
@@ -498,7 +511,7 @@ impl Repository {
         if depth >= MAX_TREE_DEPTH {
             return Err(TreeError::TreeDepth(depth).into_io_error());
         }
-        let mut directory = Directory::new();
+        let mut directory = Tree::new();
         for result in fs::read_dir(dir)? {
             let entry = result?;
             let metadata = entry.metadata()?;
@@ -548,11 +561,11 @@ impl Repository {
             directory.insert(name, item).unwrap();
         }
         if directory.as_map().is_empty() {
-            Ok(Item::EmptyDir)
+            Ok(Item::EmptyTree)
         } else {
             let obj = directory.finalize_into(&mut self.buf).unwrap();
             self.store.save(&obj)?;
-            Ok(Item::Dir(*obj.header().hash()))
+            Ok(Item::Tree(*obj.header().hash()))
         }
     }
 
@@ -755,7 +768,7 @@ mod tests {
 
         let buf = [0];
         let mut reader = ObjectReader::raw(&buf);
-        assert_eq!(decode_item(&mut reader), Ok(Item::EmptyDir));
+        assert_eq!(decode_item(&mut reader), Ok(Item::EmptyTree));
 
         let buf = [1];
         let mut reader = ObjectReader::raw(&buf);
@@ -765,7 +778,7 @@ mod tests {
         let mut reader = ObjectReader::raw(&buf);
         assert_eq!(
             decode_item(&mut reader),
-            Ok(Item::Dir(Hash::from_bytes([2; DIGEST])))
+            Ok(Item::Tree(Hash::from_bytes([2; DIGEST])))
         );
 
         let buf = [3; DIGEST + 1];
@@ -823,7 +836,7 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut obj = MutObject::new(Kind::Control, &mut buf);
-            let item = Item::EmptyDir;
+            let item = Item::EmptyTree;
             encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data(), &[0]);
@@ -837,7 +850,7 @@ mod tests {
         }
         {
             let mut obj = MutObject::new(Kind::Control, &mut buf);
-            let item = Item::Dir(hash.clone());
+            let item = Item::Tree(hash.clone());
             encode_item(&item, &mut obj).unwrap();
             let obj = obj.finalize().unwrap();
             assert_eq!(obj.as_data()[0], 2);
@@ -941,25 +954,25 @@ mod tests {
     }
 
     #[test]
-    fn test_directory_new() {
-        let d = Directory::new();
+    fn test_tree_new() {
+        let d = Tree::new();
         assert!(d.map.is_empty());
     }
 
     #[test]
-    fn test_directory_insert() {
-        let mut d = Directory::new();
+    fn test_tree_insert() {
+        let mut d = Tree::new();
 
         // Empty name
         assert_eq!(
-            d.insert(String::from(""), Item::EmptyDir).unwrap_err(),
+            d.insert(String::from(""), Item::EmptyTree).unwrap_err(),
             TreeError::NameLenBounds(0)
         );
         assert!(d.map.is_empty());
 
         // Name is too long
         assert_eq!(
-            d.insert(String::from_utf8(vec![0x42; 257]).unwrap(), Item::EmptyDir)
+            d.insert(String::from_utf8(vec![0x42; 257]).unwrap(), Item::EmptyTree)
                 .unwrap_err(),
             TreeError::NameLenBounds(257)
         );
@@ -967,21 +980,21 @@ mod tests {
 
         // "." and ".." are now allowed
         assert_eq!(
-            d.insert(String::from("."), Item::EmptyDir).unwrap_err(),
+            d.insert(String::from("."), Item::EmptyTree).unwrap_err(),
             TreeError::BadName(String::from("."))
         );
         assert!(d.map.is_empty());
         assert_eq!(
-            d.insert(String::from(".."), Item::EmptyDir).unwrap_err(),
+            d.insert(String::from(".."), Item::EmptyTree).unwrap_err(),
             TreeError::BadName(String::from(".."))
         );
         assert!(d.map.is_empty());
 
         // Max length name "BBBB..."
         let bees = String::from_utf8(vec![0x42; 256]).unwrap();
-        assert!(d.insert(bees.clone(), Item::EmptyDir).is_ok());
+        assert!(d.insert(bees.clone(), Item::EmptyTree).is_ok());
         assert_eq!(d.map.len(), 1);
-        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyTree));
 
         // Duplicate of same max length name
         assert_eq!(
@@ -989,35 +1002,35 @@ mod tests {
             TreeError::DuplicateName(bees.clone(), Item::EmptyFile)
         );
         assert_eq!(d.map.len(), 1);
-        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyTree));
 
         // Min length name "B"
         let b = String::from_utf8(vec![0x42; 1]).unwrap();
         assert_eq!(&b, "B");
         assert!(d.insert(b.clone(), Item::EmptyFile).is_ok());
         assert_eq!(d.map.len(), 2);
-        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyTree));
         assert_eq!(d.map.get(&b), Some(&Item::EmptyFile));
 
         // Duplicate of same min length name
         assert_eq!(
-            d.insert(b.clone(), Item::EmptyDir).unwrap_err(),
-            TreeError::DuplicateName(b.clone(), Item::EmptyDir)
+            d.insert(b.clone(), Item::EmptyTree).unwrap_err(),
+            TreeError::DuplicateName(b.clone(), Item::EmptyTree)
         );
         assert_eq!(d.map.len(), 2);
-        assert_eq!(d.map.get(&bees), Some(&Item::EmptyDir));
+        assert_eq!(d.map.get(&bees), Some(&Item::EmptyTree));
         assert_eq!(d.map.get(&b), Some(&Item::EmptyFile));
     }
 
     #[test]
-    fn test_directory_serialize_into() {
-        let mut d = Directory::new();
+    fn test_tree_serialize_into() {
+        let mut d = Tree::new();
         {
             let mut buf = Vec::new();
             let mut obj = MutObject::new(Kind::Data, &mut buf);
-            assert_eq!(d.serialize_into(&mut obj), Err(TreeError::EmptyDirectory));
+            assert_eq!(d.serialize_into(&mut obj), Err(TreeError::EmptyTree));
         }
-        d.insert(String::from("src"), Item::EmptyDir).unwrap();
+        d.insert(String::from("src"), Item::EmptyTree).unwrap();
         {
             let mut buf = Vec::new();
             let mut obj = MutObject::new(Kind::Data, &mut buf);
