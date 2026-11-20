@@ -301,6 +301,12 @@ pub struct Directory {
     map: HashMap<String, Item>,
 }
 
+impl Default for Directory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Directory {
     pub fn new() -> Self {
         Self {
@@ -331,8 +337,8 @@ impl Directory {
             let mut pairs = Vec::from_iter(self.map.iter());
             pairs.sort_by(|a, b| a.0.cmp(b.0));
             for (name, item) in pairs.iter() {
-                encode_name(&name, obj)?;
-                encode_item(&item, obj)?;
+                encode_name(name, obj)?;
+                encode_item(item, obj)?;
             }
             Ok(())
         }
@@ -468,16 +474,16 @@ impl Repository {
                 }
                 Item::Dir(sub_hash) => {
                     fs::create_dir(&sub_path)?;
-                    self.restore_inner(&sub_hash, &sub_path, depth + 1)?;
+                    self.restore_inner(sub_hash, &sub_path, depth + 1)?;
                 }
                 Item::File(sub_hash) => {
-                    self.restore_file(&sub_hash, &sub_path)?;
+                    self.restore_file(sub_hash, &sub_path)?;
                 }
                 Item::ExeFile(sub_hash) => {
-                    self.restore_executable_file(&sub_hash, &sub_path)?;
+                    self.restore_executable_file(sub_hash, &sub_path)?;
                 }
                 Item::SymLink(target) => {
-                    self.restore_symlink(&target, &sub_path)?;
+                    self.restore_symlink(target, &sub_path)?;
                 }
             }
         }

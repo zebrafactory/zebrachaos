@@ -101,7 +101,7 @@ impl Entry {
 ///
 /// ```
 /// use tempfile;
-/// use zf_zebrachaos::{Kind, MutObject, Store};
+/// use zf_zebrachaos::{Hash, Kind, MutObject, Store};
 ///
 /// let tmpdir = tempfile::TempDir::new().unwrap();
 /// let filename = tmpdir.path().join("chaos.data");
@@ -119,8 +119,15 @@ impl Entry {
 ///    assert!(!store.save(&obj).unwrap());
 ///    *obj.header().hash()
 /// };
+/// assert_eq!(
+///     hash,
+///     Hash::from_z32(
+///         b"B9VKZBYBXQW5TKA8PFPLS65BLQBJRKUWCIJH8OCFRWN54TQESOA5AT4FYLWQMRGKQTLA797V"
+///     )
+///     .unwrap()
+/// );
 ///
-/// // Reopen the `Store` load `Object` like this:
+/// // Reopen the store load the same object like this:
 /// let mut store = Store::open(&filename).unwrap();
 /// let obj = store.load(&hash, &mut buf).unwrap().unwrap();
 /// assert_eq!(obj.as_data(), b"hello, world");
@@ -182,8 +189,7 @@ impl Store {
     }
 
     pub fn data_total(&self) -> u64 {
-        let data_total = self.offset - (self.map.len() * HEADER) as u64;
-        data_total
+        self.offset - (self.map.len() * HEADER) as u64
     }
 
     pub fn total(&self) -> u64 {
@@ -217,8 +223,7 @@ impl Store {
         match self.map.get(obj.header().hash()) {
             Some(entry) => {
                 // Object is in index, but double check it is readble and valid at this present moment.
-                let mut buf = Vec::new();
-                buf.resize(entry.info.buf_len(), 0);
+                let mut buf = vec![0; entry.info.buf_len()];
                 read_exact_at(&self.file, &mut buf, entry.offset)?;
                 match Object::validate_with_expected_hash(&buf, obj.header().hash()) {
                     Ok(_) => Ok(false),

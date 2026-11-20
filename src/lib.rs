@@ -18,7 +18,7 @@
 //!
 //! ```
 //! use tempfile;
-//! use zf_zebrachaos::{Kind, MutObject, Store};
+//! use zf_zebrachaos::{Hash, Kind, MutObject, Store};
 //!
 //! let tmpdir = tempfile::TempDir::new().unwrap();
 //! let filename = tmpdir.path().join("chaos.data");
@@ -36,8 +36,15 @@
 //!    assert!(!store.save(&obj).unwrap());
 //!    *obj.header().hash()
 //! };
+//! assert_eq!(
+//!     hash,
+//!     Hash::from_z32(
+//!         b"B9VKZBYBXQW5TKA8PFPLS65BLQBJRKUWCIJH8OCFRWN54TQESOA5AT4FYLWQMRGKQTLA797V"
+//!     )
+//!     .unwrap()
+//! );
 //!
-//! // Reopen the `Store` load `Object` like this:
+//! // Reopen the store load the same object like this:
 //! let mut store = Store::open(&filename).unwrap();
 //! let obj = store.load(&hash, &mut buf).unwrap().unwrap();
 //! assert_eq!(obj.as_data(), b"hello, world");
