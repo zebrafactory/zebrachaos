@@ -40,7 +40,11 @@ fn test_store_load_kind() {
     let hash = *obj.header().hash();
 
     assert!(store.load_kind(Kind::Data, &hash, &mut vec![]).is_none());
-    assert!(store.load_kind(Kind::BigData, &hash, &mut vec![]).is_none());
+    assert!(
+        store
+            .load_kind(Kind::MegaData, &hash, &mut vec![])
+            .is_none()
+    );
     store.save(&obj).unwrap();
 
     let obj = store
@@ -52,13 +56,13 @@ fn test_store_load_kind() {
 
     assert_eq!(
         store
-            .load_kind(Kind::BigData, &hash, &mut buf)
+            .load_kind(Kind::MegaData, &hash, &mut buf)
             .unwrap()
             .unwrap_err()
             .into_inner()
             .unwrap()
             .downcast()
             .unwrap(),
-        Box::new(ObjectError::ExpectedKind(Kind::BigData, Kind::Data))
+        Box::new(ObjectError::ExpectedKind(Kind::MegaData, Kind::Data))
     );
 }

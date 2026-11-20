@@ -246,11 +246,11 @@ impl<'a> ObjectReader<'a> {
     }
 }
 
-pub struct BigData {
+pub struct MegaData {
     leaves: Vec<Hash>,
 }
 
-impl BigData {
+impl MegaData {
     pub fn new() -> Self {
         Self { leaves: Vec::new() }
     }
@@ -275,13 +275,13 @@ impl BigData {
     }
 
     pub fn finalize_into<'a>(self, buf: &'a mut Vec<u8>) -> Result<Object<'a>, TreeError> {
-        let mut obj = MutObject::new(Kind::BigData, buf);
+        let mut obj = MutObject::new(Kind::MegaData, buf);
         self.serialize_into(&mut obj)?;
         Ok(obj.finalize().unwrap())
     }
 
     pub fn deserialize_from(obj: &Object) -> Result<Self, TreeError> {
-        match obj.header().check_kind(Kind::BigData) {
+        match obj.header().check_kind(Kind::MegaData) {
             Ok(_) => {
                 let mut big_data = Self::new();
                 let mut reader = ObjectReader::new(obj);
@@ -409,8 +409,8 @@ impl Repository {
                     file.write_all(obj.as_data())?;
                     Ok(file)
                 }
-                Ok(Kind::BigData) => {
-                    let big_data = match BigData::deserialize_from(&obj) {
+                Ok(Kind::MegaData) => {
+                    let big_data = match MegaData::deserialize_from(&obj) {
                         Ok(big_data) => big_data,
                         Err(tree_err) => return Err(tree_err.into_io_error()),
                     };
@@ -528,7 +528,7 @@ impl Repository {
                     0 => Item::EmptyFile,
                     n if n > DATA_MAX_LEN as u64 => {
                         let mut file = File::options().read(true).open(entry.path())?;
-                        let mut big_data = BigData::new();
+                        let mut big_data = MegaData::new();
                         let mut remaining = n;
                         while remaining > 0 {
                             let amount = core::cmp::min(remaining, DATA_MAX_LEN as u64);

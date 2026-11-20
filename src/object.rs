@@ -51,7 +51,7 @@ impl std::error::Error for ObjectError {}
 pub enum Kind {
     Control,
     Data,
-    BigData,
+    MegaData,
     Tree,
 }
 
@@ -62,7 +62,7 @@ impl TryFrom<u8> for Kind {
         match value {
             0 => Ok(Self::Control),
             1 => Ok(Self::Data),
-            2 => Ok(Self::BigData),
+            2 => Ok(Self::MegaData),
             3 => Ok(Self::Tree),
             _ => Err(ObjectError::Kind(value)),
         }
@@ -558,8 +558,8 @@ mod tests {
             Err(ObjectError::ExpectedKind(Kind::Control, Kind::Data))
         );
         assert_eq!(
-            header.check_kind(Kind::BigData),
-            Err(ObjectError::ExpectedKind(Kind::BigData, Kind::Data))
+            header.check_kind(Kind::MegaData),
+            Err(ObjectError::ExpectedKind(Kind::MegaData, Kind::Data))
         );
         assert_eq!(
             header.check_kind(Kind::Tree),
@@ -567,7 +567,7 @@ mod tests {
         );
 
         let header = ObjectHeader::build(69, &data).unwrap();
-        for kind in [Kind::Control, Kind::Data, Kind::BigData, Kind::Tree] {
+        for kind in [Kind::Control, Kind::Data, Kind::MegaData, Kind::Tree] {
             assert_eq!(header.check_kind(kind), Err(ObjectError::Kind(69)));
         }
     }
