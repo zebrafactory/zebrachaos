@@ -101,7 +101,7 @@ impl Entry {
 ///
 /// ```
 /// use tempfile;
-/// use zf_zebrachaos::{MutObject, Store};
+/// use zf_zebrachaos::{Kind, MutObject, Store};
 ///
 /// let tmpdir = tempfile::TempDir::new().unwrap();
 /// let filename = tmpdir.path().join("chaos.data");
@@ -110,7 +110,7 @@ impl Entry {
 /// let hash = {
 ///    // Create a store and save our first object:
 ///    let mut store = Store::create(&filename).unwrap();
-///    let mut obj = MutObject::new(42, &mut buf);
+///    let mut obj = MutObject::new(Kind::Data, &mut buf);
 ///    obj.try_extend_from_slice(b"hello, world").unwrap();
 ///    let obj = obj.finalize().unwrap();
 ///    assert!(store.save(&obj).unwrap());
@@ -124,14 +124,13 @@ impl Entry {
 /// let mut store = Store::open(&filename).unwrap();
 /// let obj = store.load(&hash, &mut buf).unwrap().unwrap();
 /// assert_eq!(obj.as_data(), b"hello, world");
-/// assert_eq!(obj.header().kind(), 42)
+/// assert_eq!(obj.header().try_kind().unwrap(), Kind::Data);
 /// ```
 #[derive(Debug)]
 pub struct Store {
     file: File,
     map: HashMap<Hash, Entry>,
     offset: u64,
-    data_total: u64,
 }
 
 impl Store {
@@ -140,7 +139,6 @@ impl Store {
             file,
             map: HashMap::new(),
             offset: 0,
-            data_total: 0,
         }
     }
 
@@ -174,7 +172,6 @@ impl Store {
             let header = result?;
             let entry = Entry::new(header.info(), self.offset);
             self.offset += header.buf_len() as u64;
-            self.data_total += header.data_len() as u64;
             self.map.insert(header.into_hash(), entry);
         }
         Ok(())
@@ -186,7 +183,6 @@ impl Store {
 
     pub fn data_total(&self) -> u64 {
         let data_total = self.offset - (self.map.len() * HEADER) as u64;
-        assert_eq!(data_total, self.data_total);
         data_total
     }
 
@@ -212,7 +208,6 @@ impl Store {
             let entry = Entry::new(obj.header().info(), self.offset);
             self.map.insert(*obj.header().hash(), entry);
             self.offset += obj.as_buf().len() as u64;
-            self.data_total += obj.as_data().len() as u64;
             Ok(true)
         }
     }

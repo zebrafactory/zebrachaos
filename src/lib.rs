@@ -27,7 +27,7 @@
 //! let hash = {
 //!    // Create a store and save our first object:
 //!    let mut store = Store::create(&filename).unwrap();
-//!    let mut obj = MutObject::new(Kind::Data as u8, &mut buf);
+//!    let mut obj = MutObject::new(Kind::Data, &mut buf);
 //!    obj.try_extend_from_slice(b"hello, world").unwrap();
 //!    let obj = obj.finalize().unwrap();
 //!    assert!(store.save(&obj).unwrap());
