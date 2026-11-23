@@ -47,12 +47,27 @@ impl core::fmt::Display for ObjectError {
 
 impl std::error::Error for ObjectError {}
 
+/// Each object has a "kind" byte.
 #[derive(Debug, PartialEq)]
 pub enum Kind {
+    /// Contains information about the stream.
     Control,
+
+    /// A data (blob) object.
     Data,
+
+    /// A data tree object spanning at least two `Data` objects.
+    ///
+    /// These objects decode into a [BigData](crate::MegaData) struct.
     MegaData,
+
+    /// A directory-like object mapping file name to [Item](crate::Item).
+    ///
+    /// These objects decode into a [Tree](crate::Tree) struct.
     Tree,
+
+    /// A commit object.
+    Commit,
 }
 
 impl TryFrom<u8> for Kind {
@@ -64,6 +79,7 @@ impl TryFrom<u8> for Kind {
             1 => Ok(Self::Data),
             2 => Ok(Self::MegaData),
             3 => Ok(Self::Tree),
+            4 => Ok(Self::Commit),
             _ => Err(ObjectError::Kind(value)),
         }
     }
@@ -258,7 +274,7 @@ impl ObjectHeader {
     }
 }
 
-/// Object.
+/// A verified object.
 #[derive(Debug, PartialEq)]
 pub struct Object<'a> {
     header: ObjectHeader,
@@ -393,6 +409,23 @@ mod tests {
     fn test_objecterror_display_fmt() {
         let err = ObjectError::Content;
         assert_eq!(format!("{err}"), "ObjectError::Content");
+    }
+
+    #[test]
+    fn test_kind_roundtrip() {
+        for (kind, raw) in [
+            (Kind::Control, 0),
+            (Kind::Data, 1),
+            (Kind::MegaData, 2),
+            (Kind::Tree, 3),
+            (Kind::Commit, 4),
+        ] {
+            assert_eq!(Kind::try_from(raw).unwrap(), kind);
+            assert_eq!(kind as u8, raw);
+        }
+        for raw in 5..=255 {
+            assert_eq!(Kind::try_from(raw).unwrap_err(), ObjectError::Kind(raw));
+        }
     }
 
     #[test]

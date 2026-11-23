@@ -15,6 +15,7 @@ use std::{
     os::unix::fs::{PermissionsExt, symlink},
 };
 
+/// Error encountered when decoding or encoding a tree.
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
     NameLenBounds(usize),
@@ -55,11 +56,22 @@ impl From<ObjectError> for TreeError {
 /// Value in the directory map.
 #[derive(Debug, PartialEq)]
 pub enum Item {
+    /// An empty directory.
     EmptyTree,
+
+    /// An empty file.
     EmptyFile,
+
+    /// A directory.
     Tree(Hash),
+
+    /// A file stored across 1 or more objects.
     File(Hash),
+
+    /// Same as a File, except executable.
     ExeFile(Hash),
+
+    /// A symbolic link (FIXME: should perhaps store this in an object to match Git).
     SymLink(Vec<String>),
 }
 
@@ -244,6 +256,8 @@ impl<'a> ObjectReader<'a> {
     }
 }
 
+/// A list of hashes pointing to other [Kind::Data] or [Kind::MegaData] objects.
+#[derive(Debug)]
 pub struct MegaData {
     leaves: Vec<Hash>,
 }
@@ -379,7 +393,7 @@ impl Tree {
     }
 }
 
-/// Save/restore directory on a filesystem
+/// Save/restore a directory tree to/from a filesystem.
 #[derive(Debug)]
 pub struct Repository {
     store: Store,
@@ -387,6 +401,7 @@ pub struct Repository {
 }
 
 impl Repository {
+    /// Wrap a [Store].
     pub fn new(store: Store) -> Self {
         Self {
             store,
@@ -394,6 +409,7 @@ impl Repository {
         }
     }
 
+    /// Consume instance and return underlying [Store].
     pub fn into_store(self) -> Store {
         self.store
     }
@@ -505,11 +521,12 @@ impl Repository {
         Ok(())
     }
 
+    /// Restore a tree into an empty directory.
     pub fn restore(&mut self, hash: &Hash, dir: &Path) -> io::Result<()> {
         self.restore_inner(hash, dir, 0)
     }
 
-    pub fn snapshot_inner(&mut self, dir: &Path, depth: usize) -> io::Result<Item> {
+    fn snapshot_inner(&mut self, dir: &Path, depth: usize) -> io::Result<Item> {
         if depth >= TREE_MAX_DEPTH {
             return Err(TreeError::TreeDepth(depth).into_io_error());
         }
@@ -571,6 +588,7 @@ impl Repository {
         }
     }
 
+    /// Snapshot a directory and save the tree into the store.
     pub fn snapshot(&mut self, dir: &Path) -> io::Result<Item> {
         self.snapshot_inner(dir, 0)
     }
