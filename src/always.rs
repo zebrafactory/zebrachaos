@@ -32,3 +32,6 @@ pub const HASH_RANGE: Range<usize> = 0..DIGEST;
 
 /// Location of info field within object buffer.
 pub const INFO_RANGE: Range<usize> = DIGEST..DIGEST + INFO;
+
+/// Max depth of merkle
+pub const TREE_MAX_DEPTH: usize = 32;

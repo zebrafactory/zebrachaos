@@ -63,7 +63,7 @@ pub mod testhelpers;
 
 pub use always::{
     BUF_MAX_LEN, BUF_MIN_LEN, DATA_MAX_LEN, DATA_MIN_LEN, DIGEST, HASH_RANGE, HEADER, HEXDIGEST,
-    INFO, INFO_RANGE, Z32DIGEST,
+    INFO, INFO_RANGE, TREE_MAX_DEPTH, Z32DIGEST,
 };
 pub use fsutil::{create_for_append, open_for_append, read_exact_at};
 pub use hashing::{Hash, HexError, Zbase32Error};

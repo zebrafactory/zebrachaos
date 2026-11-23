@@ -2,7 +2,7 @@
 
 use crate::{
     DATA_MAX_LEN, DIGEST, HEADER, Hash, Kind, MutObject, Object, ObjectError, Store,
-    create_for_append, finalize_object,
+    TREE_MAX_DEPTH, create_for_append, finalize_object,
 };
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -14,8 +14,6 @@ use std::{
     fs::Permissions,
     os::unix::fs::{PermissionsExt, symlink},
 };
-
-const MAX_TREE_DEPTH: usize = 32;
 
 #[derive(Debug, PartialEq)]
 pub enum TreeError {
@@ -476,7 +474,7 @@ impl Repository {
     }
 
     fn restore_inner(&mut self, hash: &Hash, path: &Path, depth: usize) -> io::Result<()> {
-        if depth >= MAX_TREE_DEPTH {
+        if depth >= TREE_MAX_DEPTH {
             return Err(TreeError::TreeDepth(depth).into_io_error());
         }
         let dir = self.load_directory(hash)?;
@@ -512,7 +510,7 @@ impl Repository {
     }
 
     pub fn snapshot_inner(&mut self, dir: &Path, depth: usize) -> io::Result<Item> {
-        if depth >= MAX_TREE_DEPTH {
+        if depth >= TREE_MAX_DEPTH {
             return Err(TreeError::TreeDepth(depth).into_io_error());
         }
         let mut directory = Tree::new();
@@ -1075,7 +1073,7 @@ mod tests {
         let mut repo = Repository::new(Store::create(&filename).unwrap());
         let hash = random_hash();
         let path = tmp.path().join("foo.bar");
-        let too_big = MAX_TREE_DEPTH + 1;
+        let too_big = TREE_MAX_DEPTH + 1;
         assert_eq!(
             repo.restore_inner(&hash, &path, too_big)
                 .unwrap_err()

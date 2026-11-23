@@ -1,5 +1,7 @@
 use tempfile;
-use zf_zebrachaos::{HEADER, Hash, Item, Kind, Repository, Store, Tree, finalize_object};
+use zf_zebrachaos::{
+    HEADER, Hash, Item, Kind, Repository, Store, TREE_MAX_DEPTH, Tree, TreeError, finalize_object,
+};
 
 #[test]
 fn test_repository_snapshot_restore() {
@@ -49,5 +51,61 @@ fn test_repository_snapshot_restore() {
     assert_eq!(
         repo.snapshot(tmp2.path()).unwrap(),
         Item::Tree(expected_hash)
+    );
+}
+
+fn recursion_helper(store: &mut Store, file_hash: &Hash, depth: usize) -> Hash {
+    let mut tree = Tree::new();
+    if depth < TREE_MAX_DEPTH {
+        tree.insert(
+            String::from("sub_dir"),
+            Item::Tree(recursion_helper(store, file_hash, depth + 1)),
+        ).unwrap();
+    } else {
+        tree.insert(String::from("sub_dir"), Item::EmptyTree)
+            .unwrap();
+    }
+    tree.insert(String::from("empty_file"), Item::EmptyFile)
+        .unwrap();
+    tree.insert(
+        String::from("non_empty_file"),
+        Item::File(file_hash.clone()),
+    )
+    .unwrap();
+    let mut buf = Vec::new();
+    let obj = tree.finalize_into(&mut buf).unwrap();
+    store.save(&obj).unwrap();
+    *obj.header().hash()
+}
+
+#[test]
+fn test_repository_max_depth() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let filename = tmp.path().join("chaos.data");
+    let mut store = Store::create(&filename).unwrap();
+
+    let file_hash = {
+        let mut buf = vec![0x42; HEADER + 1];
+        let obj = finalize_object(Kind::Data as u8, &mut buf).unwrap();
+        assert!(store.save(&obj).unwrap());
+        *obj.header().hash()
+    };
+
+    let tree_hash = recursion_helper(&mut store, &file_hash, 1);
+    let parent_tree_hash = recursion_helper(&mut store, &file_hash, 0);
+
+    let tmp2 = tempfile::TempDir::new().unwrap();
+    let mut repo = Repository::new(store);
+    repo.restore(&tree_hash, tmp2.path()).unwrap();
+
+    let tmp3 = tempfile::TempDir::new().unwrap();
+    assert_eq!(
+        repo.restore(&parent_tree_hash, tmp3.path())
+            .unwrap_err()
+            .into_inner()
+            .unwrap()
+            .downcast()
+            .unwrap(),
+        Box::new(TreeError::TreeDepth(TREE_MAX_DEPTH))
     );
 }
