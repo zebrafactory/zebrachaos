@@ -60,7 +60,8 @@ fn recursion_helper(store: &mut Store, file_hash: &Hash, depth: usize) -> Hash {
         tree.insert(
             String::from("sub_dir"),
             Item::Tree(recursion_helper(store, file_hash, depth + 1)),
-        ).unwrap();
+        )
+        .unwrap();
     } else {
         tree.insert(String::from("sub_dir"), Item::EmptyTree)
             .unwrap();
